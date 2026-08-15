@@ -76,7 +76,7 @@
 
 /// <reference types="@types/google.maps" />
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePersistFn } from "@/hooks/usePersistFn";
 import { cn } from "@/lib/utils";
 
@@ -92,21 +92,27 @@ const FORGE_BASE_URL =
   "https://forge.butterfly-effect.dev";
 const MAPS_PROXY_URL = `${FORGE_BASE_URL}/v1/maps/proxy`;
 
+let mapScriptPromise: Promise<void> | null = null;
+
 function loadMapScript() {
-  return new Promise(resolve => {
+  if (window.google?.maps) return Promise.resolve();
+  if (mapScriptPromise) return mapScriptPromise;
+  mapScriptPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry`;
     script.async = true;
-    script.crossOrigin = "anonymous";
     script.onload = () => {
-      resolve(null);
+      if (window.google?.maps) resolve();
+      else reject(new Error("Google Maps SDK를 초기화하지 못했습니다."));
       script.remove(); // Clean up immediately
     };
     script.onerror = () => {
-      console.error("Failed to load Google Maps script");
+      mapScriptPromise = null;
+      reject(new Error("Google Maps 스크립트를 불러오지 못했습니다."));
     };
     document.head.appendChild(script);
   });
+  return mapScriptPromise;
 }
 
 interface MapViewProps {
@@ -124,24 +130,26 @@ export function MapView({
 }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<google.maps.Map | null>(null);
+  const [mapState, setMapState] = useState<"loading" | "ready" | "error">("loading");
 
   const init = usePersistFn(async () => {
-    await loadMapScript();
-    if (!mapContainer.current) {
-      console.error("Map container not found");
-      return;
-    }
-    map.current = new window.google.maps.Map(mapContainer.current, {
-      zoom: initialZoom,
-      center: initialCenter,
-      mapTypeControl: true,
-      fullscreenControl: true,
-      zoomControl: true,
-      streetViewControl: true,
-      mapId: "DEMO_MAP_ID",
-    });
-    if (onMapReady) {
-      onMapReady(map.current);
+    try {
+      await loadMapScript();
+      if (!mapContainer.current || !window.google?.maps) throw new Error("지도 컨테이너를 초기화하지 못했습니다.");
+      map.current = new window.google.maps.Map(mapContainer.current, {
+        zoom: initialZoom,
+        center: initialCenter,
+        mapTypeControl: true,
+        fullscreenControl: true,
+        zoomControl: true,
+        streetViewControl: true,
+        mapId: "DEMO_MAP_ID",
+      });
+      setMapState("ready");
+      onMapReady?.(map.current);
+    } catch (error) {
+      console.error("Google Maps unavailable", error);
+      setMapState("error");
     }
   });
 
@@ -149,7 +157,14 @@ export function MapView({
     init();
   }, [init]);
 
-  return (
-    <div ref={mapContainer} className={cn("w-full h-[500px]", className)} />
-  );
+  return <div className={cn("relative w-full h-[500px] bg-[#ebe7de]", className)}>
+    <div ref={mapContainer} className="h-full w-full" />
+    {mapState !== "ready" && <div className="absolute inset-0 grid place-items-center bg-[#ebe7de]/90 p-6 text-center">
+      <div>
+        <p className="font-mono text-[10px] tracking-[0.18em] text-[#8b4a38]">GOOGLE MAPS</p>
+        <p className="mt-2 font-serif text-xl text-stone-800">{mapState === "loading" ? "공간 정보를 준비하고 있습니다." : "지도를 불러오지 못했습니다."}</p>
+        <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-stone-600">{mapState === "loading" ? "대지 중심과 분석 반경은 지도 로드 후 즉시 표시됩니다." : "네트워크 연결을 확인한 뒤 새로고침해 주세요. 대지 좌표와 분석 기록은 유지됩니다."}</p>
+      </div>
+    </div>}
+  </div>;
 }
