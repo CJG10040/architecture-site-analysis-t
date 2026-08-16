@@ -9,6 +9,7 @@ import { encryptSecret, maskSecret } from "./lib/credentialCrypto";
 import { ExternalDataError, fetchAirQuality, fetchGwangjuArrivals, fetchGwangjuStations, fetchLandUse, fetchWelfareFacilities } from "./lib/dataAdapters";
 import { generateSiteReport } from "./lib/reportGenerator";
 import { credentialGroupIds } from "../shared/integrations";
+import { normalizeBoundaryGeoJson } from "./lib/boundaryGeoJson";
 
 const providers = credentialGroupIds;
 const categories = ["regulation", "environment", "transport", "parking", "facility"] as const;
@@ -43,7 +44,13 @@ export const appRouter = router({
   sites: router({
     save: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), address: z.string().max(600).optional(), latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180), analysisRadiusMeters: z.number().int().min(100).max(5000), boundaryGeoJson: z.string().max(100_000).optional() })).mutation(async ({ ctx, input }) => {
       await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin");
-      return { id: await db.saveSite({ ...input, latitude: String(input.latitude), longitude: String(input.longitude) }) };
+      let boundaryGeoJson: string | undefined;
+      try {
+        boundaryGeoJson = normalizeBoundaryGeoJson(input.boundaryGeoJson);
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "대지 경계를 처리하지 못했습니다." });
+      }
+      return { id: await db.saveSite({ ...input, boundaryGeoJson, latitude: String(input.latitude), longitude: String(input.longitude) }) };
     }),
   }),
   observations: router({

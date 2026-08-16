@@ -81,12 +81,12 @@ export async function fetchAirQuality(stationName: string) {
 }
 
 export async function fetchGwangjuStations() {
-  return publicDataRequest("dataGoKr", "https://apis.data.go.kr/6290000/gj_bis/stationInfo", { resultType: "json" });
+  return publicDataRequest("dataGoKr", "http://apis.data.go.kr/6290000/gj_bis/stationInfo", { resultType: "json" });
 }
 
 export async function fetchGwangjuArrivals(busStopId: string) {
   if (!busStopId) throw new ExternalDataError("BAD_REQUEST", "도착정보 조회에는 정류장 ID가 필요합니다.");
-  return publicDataRequest("dataGoKr", "https://apis.data.go.kr/6290000/gj_bis/arriveInfo", { BUSSTOP_ID: busStopId, resultType: "json" });
+  return publicDataRequest("dataGoKr", "http://apis.data.go.kr/6290000/gj_bis/arriveInfo", { BUSSTOP_ID: busStopId, resultType: "json" });
 }
 
 export async function fetchWelfareFacilities(districtName: string) {

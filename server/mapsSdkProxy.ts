@@ -25,7 +25,7 @@ export function registerMapsSdkProxy(app: Express) {
       const url = new URL(`${baseUrl}/v1/maps/proxy/maps/api/js`);
       url.searchParams.set("key", frontendProxyKey);
       url.searchParams.set("v", "weekly");
-      url.searchParams.set("libraries", "marker,places,geocoding,geometry");
+      url.searchParams.set("libraries", "drawing,marker,places,geocoding,geometry");
 
       const origin = resolveMapsProxyOrigin(req);
       const upstream = await fetch(url, {
