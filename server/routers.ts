@@ -8,8 +8,9 @@ import * as db from "./db";
 import { encryptSecret, maskSecret } from "./lib/credentialCrypto";
 import { ExternalDataError, fetchAirQuality, fetchGwangjuArrivals, fetchGwangjuStations, fetchLandUse, fetchWelfareFacilities } from "./lib/dataAdapters";
 import { generateSiteReport } from "./lib/reportGenerator";
+import { credentialGroupIds } from "../shared/integrations";
 
-const providers = ["landuse", "airkorea", "gwangjuBus", "welfare"] as const;
+const providers = credentialGroupIds;
 const categories = ["regulation", "environment", "transport", "parking", "facility"] as const;
 const observationTypes = ["movement", "sound", "light", "material", "boundary", "activity", "other"] as const;
 
@@ -76,7 +77,7 @@ export const appRouter = router({
           limitations = "2022-12-08 기준 제공 CSV이며 광주 지역에 한정됩니다.";
         }
         const id = await db.createSnapshot({ projectId: input.projectId, siteId: site?.id, category: input.category, sourceName, sourceUrl: upstream.sourceUrl, rawPayload: JSON.stringify(upstream.data).slice(0, 500_000), normalizedPayload: JSON.stringify(upstream.data).slice(0, 500_000), spatialScope: site ? `${site.analysisRadiusMeters}m 반경` : undefined, limitations, status: "success" });
-        await db.recordApiAudit({ provider: input.category === "regulation" ? "landuse" : input.category === "environment" ? "airkorea" : input.category === "transport" ? "gwangjuBus" : input.category === "facility" ? "welfare" : "parkingCsv", operation: "collect", success: true, responseStatus: upstream.status, initiatedBy: ctx.user.id });
+        await db.recordApiAudit({ provider: input.category === "parking" ? "parkingCsv" : "dataGoKr", operation: "collect", success: true, responseStatus: upstream.status, initiatedBy: ctx.user.id });
         return { id, status: "success" as const, data: upstream.data, sourceName, sourceUrl: upstream.sourceUrl, limitations };
       } catch (error) {
         const failure = safeExternalError(error);
@@ -101,14 +102,14 @@ export const appRouter = router({
   }),
   admin: router({
     apiCredentials: router({
-      list: adminProcedure.query(async () => (await db.listApiCredentials()).map(item => ({ provider: item.provider, isEnabled: item.isEnabled, keyVersion: item.keyVersion, lastValidatedAt: item.lastValidatedAt, lastValidationError: item.lastValidationError, maskedValue: maskSecret("configured") }))),
-      upsert: adminProcedure.input(z.object({ provider: z.enum(providers), value: z.string().min(10).max(1000), isEnabled: z.boolean().default(true) })).mutation(async ({ ctx, input }) => {
-        const encrypted = encryptSecret(input.value.trim());
-        await db.upsertApiCredential({ provider: input.provider, ...encrypted, updatedBy: ctx.user.id, isEnabled: input.isEnabled });
-        await db.recordApiAudit({ provider: input.provider, operation: "credential_upsert", success: true, safeMessage: "키가 암호화되어 저장되었습니다.", initiatedBy: ctx.user.id });
+      list: adminProcedure.query(async () => (await db.listApiCredentials()).map(item => ({ group: item.provider, isEnabled: item.isEnabled, keyVersion: item.keyVersion, lastValidatedAt: item.lastValidatedAt, lastValidationError: item.lastValidationError, maskedValue: maskSecret("configured") }))),
+      upsert: adminProcedure.input(z.object({ group: z.enum(providers), primary: z.string().min(10).max(1000), secondary: z.string().max(1000).optional(), isEnabled: z.boolean().default(true) })).mutation(async ({ ctx, input }) => {
+        const encrypted = encryptSecret(JSON.stringify({ primary: input.primary.trim(), secondary: input.secondary?.trim() || undefined }));
+        await db.upsertApiCredential({ provider: input.group, ...encrypted, updatedBy: ctx.user.id, isEnabled: input.isEnabled });
+        await db.recordApiAudit({ provider: input.group, operation: "credential_upsert", success: true, safeMessage: "제공기관 공통 키가 암호화되어 저장되었습니다.", initiatedBy: ctx.user.id });
         return { success: true };
       }),
-      disable: adminProcedure.input(z.object({ provider: z.enum(providers) })).mutation(async ({ ctx, input }) => { await db.disableApiCredential(input.provider); await db.recordApiAudit({ provider: input.provider, operation: "credential_disable", success: true, initiatedBy: ctx.user.id }); return { success: true }; }),
+      disable: adminProcedure.input(z.object({ group: z.enum(providers) })).mutation(async ({ ctx, input }) => { await db.disableApiCredential(input.group); await db.recordApiAudit({ provider: input.group, operation: "credential_disable", success: true, initiatedBy: ctx.user.id }); return { success: true }; }),
     }),
   }),
 });
