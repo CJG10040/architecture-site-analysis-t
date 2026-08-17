@@ -109,3 +109,11 @@ export async function fetchWelfareFacilities(districtName: string) {
   if (!districtName) throw new ExternalDataError("BAD_REQUEST", "복지시설 조회에는 시·군·구 명칭이 필요합니다.");
   return publicDataRequest("dataGoKr", "https://apis.data.go.kr/B554287/sclWlfrFcltInfoInqirService1/getFcltListInfoInqire", { jrsdSggNm: districtName, pageNo: 1, numOfRows: 100 });
 }
+
+export async function fetchCommerceInRadius(latitude: number, longitude: number, radiusMeters: number) {
+  return publicDataRequest("dataGoKr", "https://apis.data.go.kr/B553077/api/open/sdsc2/storeListInRadius", { radius: Math.min(radiusMeters, 2000), cx: longitude, cy: latitude, pageNo: 1, numOfRows: 100, type: "json" });
+}
+
+export async function fetchCityParks() {
+  return publicDataRequest("dataGoKr", "https://api.data.go.kr/openapi/tn_pubr_public_cty_park_info_api", { pageNo: 1, numOfRows: 100, type: "json" });
+}

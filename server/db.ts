@@ -95,10 +95,15 @@ async function requireDb() {
   return db;
 }
 
-export async function createProject(input: { ownerId: number; title: string; architecturalProgram?: string; expectedScale?: string; assignmentTheme?: string; interestLens?: string; firstQuestion?: string; siteVisitStatus?: "planned" | "completed" | "unknown" }) {
+export async function createProject(input: { ownerId: number; title: string; architecturalProgram?: string; expectedScale?: string; assignmentTheme?: string; targetUsers?: string; interestLens?: string; firstQuestion?: string; deliverableFormat?: string; avoidInterpretations?: string; siteVisitStatus?: "planned" | "completed" | "unknown" }) {
   const db = await requireDb();
   const result = await db.insert(schema.projects).values(input);
   return Number(result[0]?.insertId);
+}
+
+export async function updateProjectBrief(projectId: number, input: { title?: string; architecturalProgram?: string; expectedScale?: string; assignmentTheme?: string; targetUsers?: string; interestLens?: string; firstQuestion?: string; deliverableFormat?: string; avoidInterpretations?: string; siteVisitStatus?: "planned" | "completed" | "unknown" }) {
+  const db = await requireDb();
+  await db.update(schema.projects).set(input).where(eq(schema.projects.id, projectId));
 }
 
 export async function listProjects(ownerId: number) {
@@ -116,7 +121,7 @@ export async function getProjectForOwner(projectId: number, ownerId: number) {
   return (await db.select().from(schema.projects).where(and(eq(schema.projects.id, projectId), eq(schema.projects.ownerId, ownerId))).limit(1))[0];
 }
 
-export async function saveSite(input: { projectId: number; address?: string; latitude: string; longitude: string; analysisRadiusMeters: number; boundaryGeoJson?: string }) {
+export async function saveSite(input: { projectId: number; address?: string; parcelNumber?: string; roadAddress?: string; landAreaSqm?: string; latitude: string; longitude: string; analysisRadiusMeters: number; boundaryGeoJson?: string }) {
   const db = await requireDb();
   const existing = (await db.select().from(schema.sites).where(eq(schema.sites.projectId, input.projectId)).limit(1))[0];
   if (existing) {
@@ -132,7 +137,7 @@ export async function getSiteForProject(projectId: number) {
   return (await db.select().from(schema.sites).where(eq(schema.sites.projectId, projectId)).limit(1))[0];
 }
 
-export async function createSnapshot(input: { projectId: number; siteId?: number; category: "regulation" | "environment" | "transport" | "parking" | "facility" | "manual"; sourceName: string; sourceUrl?: string; rawPayload?: string; normalizedPayload?: string; spatialScope?: string; limitations?: string; status: "success" | "empty" | "unavailable" | "error" }) {
+export async function createSnapshot(input: { projectId: number; siteId?: number; category: "regulation" | "environment" | "transport" | "parking" | "facility" | "commerce" | "park" | "manual"; sourceName: string; sourceUrl?: string; rawPayload?: string; normalizedPayload?: string; spatialScope?: string; dataUnit?: string; reliability?: "high" | "medium" | "low" | "unknown"; limitations?: string; status: "success" | "empty" | "unavailable" | "error" }) {
   const db = await requireDb();
   const result = await db.insert(schema.analysisSnapshots).values(input);
   return Number(result[0]?.insertId);
@@ -143,7 +148,7 @@ export async function listSnapshots(projectId: number) {
   return db.select().from(schema.analysisSnapshots).where(eq(schema.analysisSnapshots.projectId, projectId)).orderBy(desc(schema.analysisSnapshots.retrievedAt));
 }
 
-export async function createObservation(input: { projectId: number; title: string; note: string; observationType: "movement" | "sound" | "light" | "material" | "boundary" | "activity" | "other"; latitude?: string; longitude?: string; direction?: string }) {
+export async function createObservation(input: { projectId: number; title: string; note: string; observationType: "movement" | "sound" | "light" | "material" | "boundary" | "activity" | "other"; latitude?: string; longitude?: string; observedAt?: Date; direction?: string; verificationStatus?: "unverified" | "confirmed" | "conflicts" }) {
   const db = await requireDb();
   const result = await db.insert(schema.fieldObservations).values(input);
   return Number(result[0]?.insertId);
@@ -154,10 +159,42 @@ export async function listObservations(projectId: number) {
   return db.select().from(schema.fieldObservations).where(eq(schema.fieldObservations.projectId, projectId)).orderBy(desc(schema.fieldObservations.createdAt));
 }
 
+export async function createFieldAttachment(input: { projectId: number; observationId?: number; attachmentType: "photo" | "sketch" | "drawing" | "document" | "audio" | "other"; fileKey: string; fileUrl: string; originalName: string; mimeType: string; byteSize: number; latitude?: string; longitude?: string; observedAt?: Date; direction?: string; transcription?: string }) {
+  const db = await requireDb();
+  const result = await db.insert(schema.fieldAttachments).values(input);
+  return Number(result[0]?.insertId);
+}
+
+export async function listFieldAttachments(projectId: number) {
+  const db = await requireDb();
+  return db.select().from(schema.fieldAttachments).where(eq(schema.fieldAttachments.projectId, projectId)).orderBy(desc(schema.fieldAttachments.createdAt));
+}
+
+export async function createRelationshipCard(input: { projectId: number; title: string; relationshipType: "adjacency" | "access" | "density" | "time" | "conflict" | "repetition" | "disconnection" | "coexistence" | "exclusion" | "preservation" | "other"; evidence: string; tensionOrOpportunity?: string; additionalResearch?: string }) {
+  const db = await requireDb();
+  const result = await db.insert(schema.relationshipCards).values(input);
+  return Number(result[0]?.insertId);
+}
+
+export async function updateRelationshipStance(id: number, projectId: number, stance: "undecided" | "agree" | "partial" | "different" | "not_important" | "research" | "counter" | "develop", userNote?: string) {
+  const db = await requireDb();
+  await db.update(schema.relationshipCards).set({ stance, userNote }).where(and(eq(schema.relationshipCards.id, id), eq(schema.relationshipCards.projectId, projectId)));
+}
+
+export async function listRelationshipCards(projectId: number) {
+  const db = await requireDb();
+  return db.select().from(schema.relationshipCards).where(eq(schema.relationshipCards.projectId, projectId)).orderBy(desc(schema.relationshipCards.updatedAt));
+}
+
 export async function createDesignCard(input: { projectId: number; cardType: "fact" | "observation" | "interpretation" | "hypothesis" | "unknown"; keyword: string; claim: string; evidence?: string; designApplication?: string; sourceSnapshotIds?: string }) {
   const db = await requireDb();
   const result = await db.insert(schema.designCards).values(input);
   return Number(result[0]?.insertId);
+}
+
+export async function reviewDesignCard(id: number, projectId: number, reviewStatus: "undecided" | "agree" | "partial" | "different" | "not_important" | "research" | "counter" | "develop", reviewNote?: string) {
+  const db = await requireDb();
+  await db.update(schema.designCards).set({ reviewStatus, reviewNote }).where(and(eq(schema.designCards.id, id), eq(schema.designCards.projectId, projectId)));
 }
 
 export async function listDesignCards(projectId: number) {
@@ -174,6 +211,11 @@ export async function createAiReport(input: { projectId: number; inputSnapshotId
 export async function listAiReports(projectId: number) {
   const db = await requireDb();
   return db.select().from(schema.aiReports).where(eq(schema.aiReports.projectId, projectId)).orderBy(desc(schema.aiReports.createdAt));
+}
+
+export async function updateAiReportReview(id: number, projectId: number, userEditedJson: string) {
+  const db = await requireDb();
+  await db.update(schema.aiReports).set({ userEditedJson }).where(and(eq(schema.aiReports.id, id), eq(schema.aiReports.projectId, projectId)));
 }
 
 export async function getApiCredential(provider: string) {
@@ -227,7 +269,9 @@ export async function getProjectBundle(projectId: number) {
   const site = await getSiteForProject(projectId);
   const snapshots = await listSnapshots(projectId);
   const observations = await listObservations(projectId);
+  const attachments = await listFieldAttachments(projectId);
+  const relationships = await listRelationshipCards(projectId);
   const cards = await listDesignCards(projectId);
   const reports = await listAiReports(projectId);
-  return { project, site, snapshots, observations, cards, reports };
+  return { project, site, snapshots, observations, attachments, relationships, cards, reports };
 }

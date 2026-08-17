@@ -15,6 +15,20 @@
       "when": 1786807626344,
       "tag": "0001_majestic_ogun",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1786942359228,
+      "tag": "0002_redundant_makkari",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1786942784413,
+      "tag": "0003_unknown_jack_flag",
+      "breakpoints": true
     }
   ]
 }

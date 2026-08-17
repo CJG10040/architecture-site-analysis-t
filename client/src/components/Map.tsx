@@ -86,7 +86,9 @@ declare global {
   }
 }
 
-const MAPS_SDK_URL = "/api/maps/sdk.js";
+const API_KEY = import.meta.env.VITE_FRONTEND_FORGE_API_KEY;
+const FORGE_BASE_URL = import.meta.env.VITE_FRONTEND_FORGE_API_URL || "https://forge.butterfly-effect.dev";
+const MAPS_PROXY_URL = `${FORGE_BASE_URL}/v1/maps/proxy`;
 
 let mapScriptPromise: Promise<void> | null = null;
 
@@ -95,8 +97,9 @@ function loadMapScript() {
   if (mapScriptPromise) return mapScriptPromise;
   mapScriptPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = MAPS_SDK_URL;
+    script.src = `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=drawing,marker,places,geocoding,geometry`;
     script.async = true;
+    script.crossOrigin = "anonymous";
     script.onload = () => {
       if (window.google?.maps) resolve();
       else reject(new Error("Google Maps SDK를 초기화하지 못했습니다."));

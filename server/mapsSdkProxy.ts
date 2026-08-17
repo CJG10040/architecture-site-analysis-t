@@ -20,16 +20,16 @@ export function registerMapsSdkProxy(app: Express) {
   app.get("/api/maps/sdk.js", async (req, res) => {
     try {
       const baseUrl = ENV.forgeApiUrl.replace(/\/+$/, "");
-      const frontendProxyKey = process.env.VITE_FRONTEND_FORGE_API_KEY;
-      if (!frontendProxyKey) throw new Error("Frontend Maps proxy credential is unavailable.");
+      if (!ENV.forgeApiKey) throw new Error("Server Maps proxy credential is unavailable.");
       const url = new URL(`${baseUrl}/v1/maps/proxy/maps/api/js`);
-      url.searchParams.set("key", frontendProxyKey);
+      url.searchParams.set("key", ENV.forgeApiKey);
       url.searchParams.set("v", "weekly");
       url.searchParams.set("libraries", "drawing,marker,places,geocoding,geometry");
 
       const origin = resolveMapsProxyOrigin(req);
       const upstream = await fetch(url, {
         headers: {
+          Authorization: `Bearer ${ENV.forgeApiKey}`,
           Origin: origin,
           Referer: `${origin}/`,
         },

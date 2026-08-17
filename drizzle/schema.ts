@@ -19,8 +19,11 @@ export const projects = mysqlTable("projects", {
   architecturalProgram: text("architecturalProgram"),
   expectedScale: varchar("expectedScale", { length: 160 }),
   assignmentTheme: text("assignmentTheme"),
+  targetUsers: text("targetUsers"),
   interestLens: varchar("interestLens", { length: 160 }),
   firstQuestion: text("firstQuestion"),
+  deliverableFormat: varchar("deliverableFormat", { length: 160 }),
+  avoidInterpretations: text("avoidInterpretations"),
   siteVisitStatus: mysqlEnum("siteVisitStatus", ["planned", "completed", "unknown"]).default("unknown").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -45,7 +48,7 @@ export const analysisSnapshots = mysqlTable("analysisSnapshots", {
   id: int("id").autoincrement().primaryKey(),
   projectId: int("projectId").notNull(),
   siteId: int("siteId"),
-  category: mysqlEnum("analysisCategory", ["regulation", "environment", "transport", "parking", "facility", "manual"]).notNull(),
+  category: mysqlEnum("analysisCategory", ["regulation", "environment", "transport", "parking", "facility", "commerce", "park", "manual"]).notNull(),
   sourceName: varchar("sourceName", { length: 160 }).notNull(),
   sourceUrl: text("sourceUrl"),
   rawPayload: text("rawPayload"),
@@ -53,6 +56,8 @@ export const analysisSnapshots = mysqlTable("analysisSnapshots", {
   retrievedAt: timestamp("retrievedAt").defaultNow().notNull(),
   datasetUpdatedAt: varchar("datasetUpdatedAt", { length: 64 }),
   spatialScope: varchar("spatialScope", { length: 160 }),
+  dataUnit: varchar("dataUnit", { length: 120 }),
+  reliability: mysqlEnum("snapshotReliability", ["high", "medium", "low", "unknown"]).default("unknown").notNull(),
   limitations: text("limitations"),
   status: mysqlEnum("snapshotStatus", ["success", "empty", "unavailable", "error"]).default("success").notNull(),
 });
@@ -72,6 +77,38 @@ export const fieldObservations = mysqlTable("fieldObservations", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+export const fieldAttachments = mysqlTable("fieldAttachments", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  observationId: int("observationId"),
+  attachmentType: mysqlEnum("attachmentType", ["photo", "sketch", "drawing", "document", "audio", "other"]).notNull(),
+  fileKey: text("fileKey").notNull(),
+  fileUrl: text("fileUrl").notNull(),
+  originalName: varchar("originalName", { length: 255 }).notNull(),
+  mimeType: varchar("mimeType", { length: 120 }).notNull(),
+  byteSize: int("byteSize").notNull(),
+  latitude: varchar("latitude", { length: 32 }),
+  longitude: varchar("longitude", { length: 32 }),
+  observedAt: timestamp("observedAt"),
+  direction: varchar("direction", { length: 32 }),
+  transcription: text("transcription"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const relationshipCards = mysqlTable("relationshipCards", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  title: varchar("title", { length: 160 }).notNull(),
+  relationshipType: mysqlEnum("relationshipType", ["adjacency", "access", "density", "time", "conflict", "repetition", "disconnection", "coexistence", "exclusion", "preservation", "other"]).notNull(),
+  evidence: text("evidence").notNull(),
+  tensionOrOpportunity: text("tensionOrOpportunity"),
+  additionalResearch: text("additionalResearch"),
+  stance: mysqlEnum("relationshipStance", ["undecided", "agree", "partial", "different", "not_important", "research", "counter", "develop"]).default("undecided").notNull(),
+  userNote: text("userNote"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export const designCards = mysqlTable("designCards", {
   id: int("id").autoincrement().primaryKey(),
   projectId: int("projectId").notNull(),
@@ -81,6 +118,8 @@ export const designCards = mysqlTable("designCards", {
   evidence: text("evidence"),
   designApplication: text("designApplication"),
   sourceSnapshotIds: text("sourceSnapshotIds"),
+  reviewStatus: mysqlEnum("designCardReviewStatus", ["undecided", "agree", "partial", "different", "not_important", "research", "counter", "develop"]).default("undecided").notNull(),
+  reviewNote: text("reviewNote"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

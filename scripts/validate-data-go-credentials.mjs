@@ -56,6 +56,8 @@ try {
     ["에어코리아 대기오염정보", "https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getMsrstnAcctoRltmMesureDnsty", { stationName: "서석동", dataTerm: "DAILY", numOfRows: "1", pageNo: "1", returnType: "json" }],
     ["광주 BIS", "https://apis.data.go.kr/6290000/gj_bis/stationInfo", { resultType: "json" }],
     ["사회복지시설", "https://apis.data.go.kr/B554287/sclWlfrFcltInfoInqirService1/getFcltListInfoInqire", { jrsdSggNm: "광주광역시 동구", pageNo: "1", numOfRows: "1" }],
+    ["상가(상권) 반경상가", "https://apis.data.go.kr/B553077/api/open/sdsc2/storeListInRadius", { radius: "800", cx: "126.9210", cy: "35.1467", pageNo: "1", numOfRows: "5", type: "json" }],
+    ["전국도시공원", "https://api.data.go.kr/openapi/tn_pubr_public_cty_park_info_api", { pageNo: "1", numOfRows: "5", type: "json" }],
   ];
   const results = [];
   for (const [label, endpoint, params] of requests) {

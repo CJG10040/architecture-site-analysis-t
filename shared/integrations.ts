@@ -5,8 +5,8 @@ export const credentialGroups = [
     shortName: "data.go.kr",
     description: "하나의 인증키를 서비스별 활용승인 상태에 따라 재사용합니다. 승인 상태와 실제 앱 연결 상태는 별도로 표시합니다.",
     fields: [{ id: "primary", label: "서비스 키", placeholder: "공공데이터포털에서 발급·활용승인된 ServiceKey" }],
-    activeServices: ["토지이용규제 행위제한정보 · DTarLandUseInfo", "에어코리아 측정소정보·대기오염정보", "전남광주통합특별시 광주버스정보", "사회복지시설정보서비스 현황"],
-    plannedServices: ["광주교통공사 역 인근 주차장 API · 현재 제공 CSV 58건 사용", "전국도시공원정보표준데이터 · 활용승인됨, 앱 연결 예정", "상가(상권)정보 API · 활용승인됨, 앱 연결 예정", "기타 공공데이터포털 서비스"],
+    activeServices: ["토지이용규제 행위제한정보 · DTarLandUseInfo", "에어코리아 측정소정보·대기오염정보", "전남광주통합특별시 광주버스정보", "사회복지시설정보서비스 현황", "전국도시공원정보표준데이터", "상가(상권)정보 API · 반경상가"],
+    plannedServices: ["광주교통공사 역 인근 주차장 API · 현재 제공 CSV 58건 사용", "기타 공공데이터포털 서비스"],
   },
   {
     id: "sgis",
