@@ -83,12 +83,12 @@ import { cn } from "@/lib/utils";
 declare global {
   interface Window {
     google?: typeof google;
+    __manusMapsReady?: () => void;
   }
 }
 
-const API_KEY = import.meta.env.VITE_FRONTEND_FORGE_API_KEY;
-const FORGE_BASE_URL = import.meta.env.VITE_FRONTEND_FORGE_API_URL || "https://forge.butterfly-effect.dev";
-const MAPS_PROXY_URL = `${FORGE_BASE_URL}/v1/maps/proxy`;
+const MAP_SCRIPT_ID = "manus-google-maps-sdk";
+const MAPS_SDK_ENDPOINT = "/api/maps/sdk.js";
 
 let mapScriptPromise: Promise<void> | null = null;
 
@@ -96,19 +96,44 @@ function loadMapScript() {
   if (window.google?.maps) return Promise.resolve();
   if (mapScriptPromise) return mapScriptPromise;
   mapScriptPromise = new Promise((resolve, reject) => {
+    document.getElementById(MAP_SCRIPT_ID)?.remove();
     const script = document.createElement("script");
-    script.src = `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry`;
+    let settled = false;
+    let readyPoll: number | undefined;
+    let readyTimeout: number | undefined;
+    const clearPending = () => {
+      if (readyPoll) window.clearInterval(readyPoll);
+      if (readyTimeout) window.clearTimeout(readyTimeout);
+      delete window.__manusMapsReady;
+    };
+    const finish = () => {
+      if (settled || !window.google?.maps?.Map) return;
+      settled = true;
+      clearPending();
+      resolve();
+    };
+    const fail = (message: string) => {
+      if (settled) return;
+      settled = true;
+      mapScriptPromise = null;
+      clearPending();
+      script.remove();
+      reject(new Error(message));
+    };
+    script.id = MAP_SCRIPT_ID;
+    script.src = MAPS_SDK_ENDPOINT;
     script.async = true;
-    script.crossOrigin = "anonymous";
+    window.__manusMapsReady = () => {
+      finish();
+    };
     script.onload = () => {
-      if (window.google?.maps) resolve();
-      else reject(new Error("Google Maps SDK를 초기화하지 못했습니다."));
-      script.remove(); // Clean up immediately
+      finish();
     };
     script.onerror = () => {
-      mapScriptPromise = null;
-      reject(new Error("Google Maps 스크립트를 불러오지 못했습니다."));
+      fail("Google Maps 스크립트를 불러오지 못했습니다.");
     };
+    readyPoll = window.setInterval(finish, 100);
+    readyTimeout = window.setTimeout(() => fail("Google Maps SDK 초기화 시간이 초과되었습니다."), 15_000);
     document.head.appendChild(script);
   });
   return mapScriptPromise;
@@ -133,6 +158,7 @@ export function MapView({
 
   const init = usePersistFn(async () => {
     try {
+      setMapState("loading");
       await loadMapScript();
       if (!mapContainer.current || !window.google?.maps) throw new Error("지도 컨테이너를 초기화하지 못했습니다.");
       map.current = new window.google.maps.Map(mapContainer.current, {

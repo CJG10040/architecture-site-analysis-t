@@ -4,6 +4,12 @@ import { ENV } from "./_core/env";
 const DEV_PREVIEW_ORIGIN = "https://3000-ifz6t6fcaupam64k9e60m-b45efd32.sg1.manus.computer";
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
+export function resolveMapsSdkCredentials(environment: Record<string, string | undefined> = process.env) {
+  const baseUrl = environment.VITE_FRONTEND_FORGE_API_URL || ENV.forgeApiUrl;
+  const apiKey = environment.VITE_FRONTEND_FORGE_API_KEY || ENV.forgeApiKey;
+  return { baseUrl: baseUrl.replace(/\/+$/, ""), apiKey };
+}
+
 export function resolveMapsProxyOrigin(req: Pick<Request, "headers">) {
   const forwardedHost = req.headers["x-forwarded-host"];
   const host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost)?.split(",")[0]?.trim()
@@ -19,17 +25,18 @@ export function resolveMapsProxyOrigin(req: Pick<Request, "headers">) {
 export function registerMapsSdkProxy(app: Express) {
   app.get("/api/maps/sdk.js", async (req, res) => {
     try {
-      const baseUrl = ENV.forgeApiUrl.replace(/\/+$/, "");
-      if (!ENV.forgeApiKey) throw new Error("Server Maps proxy credential is unavailable.");
+      const { baseUrl, apiKey } = resolveMapsSdkCredentials();
+      if (!baseUrl || !apiKey) throw new Error("Server Maps proxy credential is unavailable.");
       const url = new URL(`${baseUrl}/v1/maps/proxy/maps/api/js`);
-      url.searchParams.set("key", ENV.forgeApiKey);
+      url.searchParams.set("key", apiKey);
       url.searchParams.set("v", "weekly");
-      url.searchParams.set("libraries", "drawing,marker,places,geocoding,geometry");
+      url.searchParams.set("libraries", "marker,places,geocoding,geometry");
+      url.searchParams.set("loading", "async");
+      url.searchParams.set("callback", "__manusMapsReady");
 
       const origin = resolveMapsProxyOrigin(req);
       const upstream = await fetch(url, {
         headers: {
-          Authorization: `Bearer ${ENV.forgeApiKey}`,
           Origin: origin,
           Referer: `${origin}/`,
         },
