@@ -141,7 +141,6 @@ export const appRouter = router({
       await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin");
       const bundle = await db.getProjectBundle(input.projectId);
       if (!bundle.site) throw new TRPCError({ code: "BAD_REQUEST", message: "AI 보고서 전에 대지 위치를 저장하세요." });
-      if (bundle.snapshots.length === 0 && bundle.observations.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "AI 보고서 전에 최소 하나의 데이터 수집 또는 현장 관찰을 추가하세요." });
       const generated = await generateSiteReport(bundle);
       const id = await db.createAiReport({ projectId: input.projectId, inputSnapshotIds: JSON.stringify(bundle.snapshots.map(item => item.id)), modelId: generated.modelId, reportJson: JSON.stringify(generated.report) });
       return { id, ...generated };
