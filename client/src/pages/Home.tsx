@@ -60,6 +60,7 @@ export default function Home() {
   const overlaysRef = useRef<google.maps.MVCObject[]>([]);
   const boundaryPolygonRef = useRef<google.maps.Polygon | null>(null);
   const boundaryDraftLineRef = useRef<google.maps.Polyline | null>(null);
+  const boundaryDraftMarkersRef = useRef<google.maps.Marker[]>([]);
   const boundaryDrawingListenersRef = useRef<google.maps.MapsEventListener[]>([]);
   const boundaryDraftPointsRef = useRef<google.maps.LatLngLiteral[]>([]);
   const [isBoundaryDrawing, setIsBoundaryDrawing] = useState(false);
@@ -120,8 +121,8 @@ export default function Home() {
     if (!mapRef.current || !window.google) return;
     overlaysRef.current.forEach(overlay => { (overlay as google.maps.Circle | google.maps.Marker).setMap?.(null); });
     const position = { lat: siteDraft.latitude, lng: siteDraft.longitude };
-    const marker = new google.maps.Marker({ map: mapRef.current, position, title: "분석 대지 중심" });
-    const radius = new google.maps.Circle({ map: mapRef.current, center: position, radius: siteDraft.analysisRadiusMeters, strokeColor: "#a9684f", strokeOpacity: 0.85, strokeWeight: 1.5, fillColor: "#c88967", fillOpacity: 0.10 });
+    const marker = new google.maps.Marker({ map: mapRef.current, position, title: "분석 대지 중심", clickable: false });
+    const radius = new google.maps.Circle({ map: mapRef.current, center: position, radius: siteDraft.analysisRadiusMeters, strokeColor: "#a9684f", strokeOpacity: 0.85, strokeWeight: 1.5, fillColor: "#c88967", fillOpacity: 0.10, clickable: false });
     overlaysRef.current = [marker, radius];
     mapRef.current.setCenter(position);
   }, [mapIsReady, siteDraft.latitude, siteDraft.longitude, siteDraft.analysisRadiusMeters]);
@@ -131,7 +132,7 @@ export default function Home() {
     boundaryPolygonRef.current?.setMap(null);
     const points = parseBoundaryGeoJson(siteDraft.boundaryGeoJson);
     if (points.length < 3) { boundaryPolygonRef.current = null; return; }
-    const polygon = new google.maps.Polygon({ map: mapRef.current, paths: points, editable: true, draggable: false, strokeColor: "#8b4a38", strokeOpacity: 0.95, strokeWeight: 2, fillColor: "#c88967", fillOpacity: 0.18, zIndex: 3 });
+    const polygon = new google.maps.Polygon({ map: mapRef.current, paths: points, editable: true, draggable: false, clickable: false, strokeColor: "#8b4a38", strokeOpacity: 0.95, strokeWeight: 2, fillColor: "#c88967", fillOpacity: 0.18, zIndex: 3 });
     boundaryPolygonRef.current = polygon;
     const listeners = bindPolygonEdits(polygon);
     const bounds = new google.maps.LatLngBounds();
@@ -145,6 +146,8 @@ export default function Home() {
     boundaryDrawingListenersRef.current = [];
     boundaryDraftLineRef.current?.setMap(null);
     boundaryDraftLineRef.current = null;
+    boundaryDraftMarkersRef.current.forEach(marker => marker.setMap(null));
+    boundaryDraftMarkersRef.current = [];
     mapRef.current?.setOptions({ draggableCursor: null });
     setIsBoundaryDrawing(false);
     setBoundaryDraftPointCount(0);
@@ -155,6 +158,7 @@ export default function Home() {
     cleanupBoundaryDrawing();
     boundaryDraftPointsRef.current = [];
     const map = mapRef.current;
+    boundaryPolygonRef.current?.setMap(null);
     map.setOptions({ draggableCursor: "crosshair" });
     boundaryDraftLineRef.current = new google.maps.Polyline({ map, path: [], strokeColor: "#8b4a38", strokeOpacity: 0.95, strokeWeight: 2.5, clickable: false, zIndex: 5 });
     const clickListener = map.addListener("click", (event: google.maps.MapMouseEvent) => {
@@ -162,6 +166,7 @@ export default function Home() {
       const point = { lat: event.latLng.lat(), lng: event.latLng.lng() };
       boundaryDraftPointsRef.current = [...boundaryDraftPointsRef.current, point];
       boundaryDraftLineRef.current?.setPath(boundaryDraftPointsRef.current);
+      boundaryDraftMarkersRef.current.push(new google.maps.Marker({ map, position: point, clickable: false, zIndex: 6, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: "#8b4a38", fillOpacity: 1, strokeColor: "#fffaf2", strokeOpacity: 1, strokeWeight: 2 } }));
       setBoundaryDraftPointCount(boundaryDraftPointsRef.current.length);
     });
     boundaryDrawingListenersRef.current = [clickListener];
