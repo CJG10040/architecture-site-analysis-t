@@ -135,22 +135,27 @@ export async function fetchSgisCensusSummary(input: { administrativeCode?: strin
   const auth = await sgisRequest(authUrl);
   const token = auth.data.result && typeof auth.data.result === "object" ? String((auth.data.result as Record<string, unknown>).accessToken ?? "") : "";
   if (!token) throw new ExternalDataError("UPSTREAM_ERROR", "SGIS 인증 응답에 accessToken이 없습니다.", auth.status);
-  const query = async (path: string) => {
-    const url = new URL(`https://sgisapi.kostat.go.kr/OpenAPI3/stats/${path}.json`);
-    url.searchParams.set("accessToken", token);
-    url.searchParams.set("year", "2020");
-    url.searchParams.set("adm_cd", administrativeCode);
-    url.searchParams.set("low_search", "0");
-    return sgisRequest(url);
+  const query = async (path: string, years: string[]) => {
+    let lastError: unknown;
+    for (const year of years) {
+      const url = new URL(`https://sgisapi.kostat.go.kr/OpenAPI3/stats/${path}.json`);
+      url.searchParams.set("accessToken", token);
+      url.searchParams.set("year", year);
+      url.searchParams.set("adm_cd", administrativeCode);
+      url.searchParams.set("low_search", "0");
+      try { return { ...(await sgisRequest(url)), year }; }
+      catch (error) { lastError = error; }
+    }
+    throw lastError;
   };
-  const [population, household, company] = await Promise.allSettled([query("population"), query("household"), query("company")]);
-  const extract = (label: string, result: PromiseSettledResult<{ data: Record<string, unknown>; status: number }>) => result.status === "fulfilled" ? { rows: result.value.data.result ?? [], warning: undefined } : { rows: [], warning: `${label}: ${result.reason instanceof Error ? result.reason.message : "응답을 확인하지 못했습니다."}` };
+  const [population, household, company] = await Promise.allSettled([query("population", ["2020", "2019"]), query("household", ["2020", "2019", "2018"]), query("company", ["2019"])]);
+  const extract = (label: string, result: PromiseSettledResult<{ data: Record<string, unknown>; status: number; year: string }>) => result.status === "fulfilled" ? { rows: result.value.data.result ?? [], year: result.value.year, warning: undefined } : { rows: [], year: undefined, warning: `${label}: ${result.reason instanceof Error ? result.reason.message : "응답을 확인하지 못했습니다."}` };
   const populationResult = extract("인구", population);
   const householdResult = extract("가구", household);
   const companyResult = extract("사업체", company);
   const unavailableSections = [populationResult.warning, householdResult.warning, companyResult.warning].filter((message): message is string => Boolean(message));
   if (unavailableSections.length === 3) throw new ExternalDataError("UPSTREAM_ERROR", `SGIS 통계 결과를 가져오지 못했습니다. ${unavailableSections.join(" / ")}`);
-  return { data: { administrativeCode, baseYear: 2020, population: populationResult.rows, household: householdResult.rows, company: companyResult.rows, unavailableSections }, sourceUrl: "https://sgis.mods.go.kr/developer/html/openApi/api/data.html", status: 200 };
+  return { data: { administrativeCode, baseYears: { population: populationResult.year, household: householdResult.year, company: companyResult.year }, population: populationResult.rows, household: householdResult.rows, company: companyResult.rows, unavailableSections }, sourceUrl: "https://sgis.mods.go.kr/developer/html/openApi/api/data.html", status: 200 };
 }
 
 function getPublicDataError(data: unknown) {

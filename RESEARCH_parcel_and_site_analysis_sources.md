@@ -29,3 +29,11 @@
 - 토지이음 행위제한정보 데이터개방: https://www.eum.go.kr/web/op/sv/svItemDet.jsp?dataCd=007&dataTypeCd=CSV&currentPageNo=1&selectType=subject
 - SGIS OpenAPI 데이터 안내: https://sgis.mods.go.kr/developer/html/openApi/api/data.html
 - VWorld 데이터 API 목록: https://www.vworld.kr/dev/v4dv_2ddataguide_s001.do
+
+## SGIS 센서스 통계 계약 재확인 (2026-08-17)
+
+- 공식 SGIS 데이터 API 문서는 `population.json`, `household.json`, `company.json`을 각각 인구·가구·사업체 통계 경로로 안내한다. 세 API는 `accessToken`, `adm_cd`, `low_search`를 사용하며, `adm_cd`는 2자리 시도·5자리 시군구·7자리 읍면동 코드가 될 수 있다.
+- 인구와 가구 API는 2020년까지의 기준연도를 안내하지만, 사업체 API는 2019년까지의 기준연도를 안내한다. 따라서 하나의 2020년 파라미터를 세 API에 공통 적용하면 사업체 또는 일부 응답이 비어 있을 수 있다.
+- 설계 조사 화면에서는 인구·가구·사업체의 기준연도를 분리하여 출처·한계로 기록해야 하며, 응답이 없는 통계 항목은 전체 수집 실패가 아닌 `부분 수집/재확인 필요`로 남긴다.
+
+출처: [SGIS DATA API 공식 안내](https://sgis.mods.go.kr/developer/html/openApi/api/data.html)

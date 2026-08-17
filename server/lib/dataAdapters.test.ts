@@ -81,12 +81,18 @@ describe("SGIS census summary", () => {
     const result = await fetchSgisCensusSummary({ pnu: "2911010800100010000" });
     const authUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
     const populationUrl = new URL(String(fetchMock.mock.calls[1]?.[0]));
+    const householdUrl = new URL(String(fetchMock.mock.calls[2]?.[0]));
+    const companyUrl = new URL(String(fetchMock.mock.calls[3]?.[0]));
     expect(authUrl.pathname).toBe("/OpenAPI3/auth/authentication.json");
     expect(authUrl.searchParams.get("consumer_key")).toBe("test-service-key");
     expect(authUrl.searchParams.get("consumer_secret")).toBe("test-consumer-secret");
     expect(populationUrl.pathname).toBe("/OpenAPI3/stats/population.json");
     expect(populationUrl.searchParams.get("adm_cd")).toBe("29110");
+    expect(populationUrl.searchParams.get("year")).toBe("2020");
+    expect(householdUrl.searchParams.get("year")).toBe("2020");
+    expect(companyUrl.searchParams.get("year")).toBe("2019");
     expect(result.data.population).toEqual([{ tot_ppltn: "100" }]);
+    expect(result.data.baseYears).toMatchObject({ population: "2020", household: "2020", company: "2019" });
   });
 
   it("keeps available population and company data when one statistical section is unavailable", async () => {
