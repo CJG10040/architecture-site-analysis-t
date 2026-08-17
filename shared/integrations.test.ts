@@ -4,7 +4,12 @@ import { credentialGroups, getCredentialGroup } from "./integrations";
 describe("credential groups", () => {
   it("maps every currently connected public-data service to the shared data.go.kr credential", () => {
     const dataGoKr = getCredentialGroup("dataGoKr");
-    expect(dataGoKr.activeServices).toEqual(expect.arrayContaining(["토지이용규제", "에어코리아", "광주 BIS", "사회복지시설"]));
+    expect(dataGoKr.activeServices).toEqual(expect.arrayContaining([
+      "토지이용규제 행위제한정보 · DTarLandUseInfo",
+      "에어코리아 측정소정보·대기오염정보",
+      "전남광주통합특별시 광주버스정보",
+      "사회복지시설정보서비스 현황",
+    ]));
     expect(dataGoKr.fields).toHaveLength(1);
   });
 

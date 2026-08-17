@@ -42,14 +42,23 @@ async function getProviderKey(provider: Provider) {
   }
 }
 
-async function publicDataRequest(provider: Provider, endpoint: string, params: Record<string, string | number | undefined>) {
+function getPublicDataError(data: unknown) {
+  if (!data || typeof data !== "object") return null;
+  const response = "response" in data && data.response && typeof data.response === "object" ? data.response as Record<string, unknown> : data as Record<string, unknown>;
+  const header = response.header && typeof response.header === "object" ? response.header as Record<string, unknown> : response.cmmMsgHeader && typeof response.cmmMsgHeader === "object" ? response.cmmMsgHeader as Record<string, unknown> : null;
+  const code = String(header?.resultCode ?? header?.returnReasonCode ?? response.ERROR_CODE ?? "");
+  const message = String(header?.resultMsg ?? header?.errMsg ?? header?.returnAuthMsg ?? response.ERROR_MSG ?? "");
+  return code && !["0", "00", "NORMAL_CODE"].includes(code) ? { code, message } : null;
+}
+
+async function publicDataRequest(provider: Provider, endpoint: string, params: Record<string, string | number | undefined>, responseFormat: "json" | "xml" = "json") {
   const key = await getProviderKey(provider);
   const url = new URL(endpoint);
   Object.entries(params).forEach(([name, value]) => {
     if (value !== undefined && value !== "") url.searchParams.set(name, String(value));
   });
   url.searchParams.set("serviceKey", key);
-  url.searchParams.set("returnType", "json");
+  if (responseFormat === "json") url.searchParams.set("returnType", "json");
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
@@ -57,11 +66,11 @@ async function publicDataRequest(provider: Provider, endpoint: string, params: R
     const response = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json, application/xml;q=0.9" } });
     const body = await response.text();
     if (!response.ok) throw new ExternalDataError("UPSTREAM_ERROR", `외부 데이터 서비스가 ${response.status} 상태로 응답했습니다.`, response.status);
-    try {
-      return { data: JSON.parse(body), sourceUrl: url.origin + url.pathname, status: response.status };
-    } catch {
-      return { data: parser.parse(body), sourceUrl: url.origin + url.pathname, status: response.status };
-    }
+    let data: unknown;
+    try { data = JSON.parse(body); } catch { data = parser.parse(body); }
+    const upstreamError = getPublicDataError(data);
+    if (upstreamError) throw new ExternalDataError("UPSTREAM_ERROR", `외부 데이터 서비스가 요청을 거부했습니다: ${upstreamError.message || upstreamError.code}`, response.status);
+    return { data, sourceUrl: url.origin + url.pathname, status: response.status };
   } catch (error) {
     if (error instanceof ExternalDataError) throw error;
     throw new ExternalDataError("UNAVAILABLE", `외부 데이터 서비스 연결에 실패했습니다: ${compactError(error instanceof Error ? error.message : "알 수 없는 오류")}`);
@@ -70,23 +79,30 @@ async function publicDataRequest(provider: Provider, endpoint: string, params: R
   }
 }
 
-export async function fetchLandUse(pnu: string) {
-  if (!pnu) throw new ExternalDataError("BAD_REQUEST", "토지이용규제 조회에는 PNU가 필요합니다. 대지의 지번을 확인한 뒤 다시 시도하세요.");
-  return publicDataRequest("dataGoKr", "https://apis.data.go.kr/1613000/arLandUseInfoService/getLandUseInfo", { pnu, numOfRows: 100, pageNo: 1 });
+export async function fetchLandUse(input: { areaCd: string; ucodeList: string; landUseNm: string }) {
+  if (!input.areaCd.trim() || !input.ucodeList.trim() || !input.landUseNm.trim()) {
+    throw new ExternalDataError("BAD_REQUEST", "토지이용규제 행위제한정보 조회에는 시군구 코드, 지역지구 코드, 토지이용행위명이 모두 필요합니다.");
+  }
+  return publicDataRequest("dataGoKr", "https://apis.data.go.kr/1613000/arLandUseInfoService/DTarLandUseInfo", { areaCd: input.areaCd.trim(), ucodeList: input.ucodeList.trim(), landUseNm: input.landUseNm.trim() }, "xml");
 }
 
 export async function fetchAirQuality(stationName: string) {
-  if (!stationName) throw new ExternalDataError("BAD_REQUEST", "대기질 조회에는 인근 측정소 선택이 필요합니다.");
+  if (!stationName.trim()) throw new ExternalDataError("BAD_REQUEST", "대기질 조회에는 인근 측정소명이 필요합니다. 예: 서석동, 운암동");
   return publicDataRequest("dataGoKr", "https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getMsrstnAcctoRltmMesureDnsty", { stationName, dataTerm: "DAILY", numOfRows: 5, pageNo: 1, returnType: "json" });
 }
 
+export async function fetchAirStations(address: string) {
+  if (!address.trim()) throw new ExternalDataError("BAD_REQUEST", "측정소 검색에는 시·도 또는 시·군·구 주소가 필요합니다.");
+  return publicDataRequest("dataGoKr", "https://apis.data.go.kr/B552584/MsrstnInfoInqireSvc/getMsrstnList", { addr: address.trim(), numOfRows: 100, pageNo: 1, returnType: "json" });
+}
+
 export async function fetchGwangjuStations() {
-  return publicDataRequest("dataGoKr", "http://apis.data.go.kr/6290000/gj_bis/stationInfo", { resultType: "json" });
+  return publicDataRequest("dataGoKr", "https://apis.data.go.kr/6290000/gj_bis/stationInfo", { resultType: "json" });
 }
 
 export async function fetchGwangjuArrivals(busStopId: string) {
   if (!busStopId) throw new ExternalDataError("BAD_REQUEST", "도착정보 조회에는 정류장 ID가 필요합니다.");
-  return publicDataRequest("dataGoKr", "http://apis.data.go.kr/6290000/gj_bis/arriveInfo", { BUSSTOP_ID: busStopId, resultType: "json" });
+  return publicDataRequest("dataGoKr", "https://apis.data.go.kr/6290000/gj_bis/arriveInfo", { BUSSTOP_ID: busStopId, resultType: "json" });
 }
 
 export async function fetchWelfareFacilities(districtName: string) {

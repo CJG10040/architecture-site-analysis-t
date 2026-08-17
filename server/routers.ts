@@ -6,7 +6,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { encryptSecret, maskSecret } from "./lib/credentialCrypto";
-import { ExternalDataError, fetchAirQuality, fetchGwangjuArrivals, fetchGwangjuStations, fetchLandUse, fetchWelfareFacilities } from "./lib/dataAdapters";
+import { ExternalDataError, fetchAirQuality, fetchAirStations, fetchGwangjuArrivals, fetchGwangjuStations, fetchLandUse, fetchWelfareFacilities } from "./lib/dataAdapters";
 import { generateSiteReport } from "./lib/reportGenerator";
 import { credentialGroupIds } from "../shared/integrations";
 import { normalizeBoundaryGeoJson } from "./lib/boundaryGeoJson";
@@ -65,14 +65,14 @@ export const appRouter = router({
     create: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), cardType: z.enum(["fact", "observation", "interpretation", "hypothesis", "unknown"]), keyword: z.string().min(1).max(80), claim: z.string().min(1).max(3000), evidence: z.string().max(3000).optional(), designApplication: z.string().max(3000).optional() })).mutation(async ({ ctx, input }) => { await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin"); return { id: await db.createDesignCard(input) }; }),
   }),
   analysis: router({
-    collect: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), category: z.enum(categories), pnu: z.string().max(32).optional(), stationName: z.string().max(100).optional(), districtName: z.string().max(120).optional(), busStopId: z.string().max(32).optional() })).mutation(async ({ ctx, input }) => {
+    collect: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), category: z.enum(categories), areaCd: z.string().max(8).optional(), ucodeList: z.string().max(100).optional(), landUseNm: z.string().max(120).optional(), stationName: z.string().max(100).optional(), districtName: z.string().max(120).optional(), busStopId: z.string().max(32).optional() })).mutation(async ({ ctx, input }) => {
       await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin");
       const site = await db.getSiteForProject(input.projectId);
       try {
         let upstream: { data: unknown; sourceUrl: string; status: number };
         let sourceName = "";
         let limitations = "";
-        if (input.category === "regulation") { upstream = await fetchLandUse(input.pnu ?? ""); sourceName = "토지이용규제정보"; limitations = "법적 인허가 가능성의 최종 판단이 아니며, 원문과 관할 행정기관 확인이 필요합니다."; }
+        if (input.category === "regulation") { upstream = await fetchLandUse({ areaCd: input.areaCd ?? "", ucodeList: input.ucodeList ?? "", landUseNm: input.landUseNm ?? "" }); sourceName = "토지이용규제 행위제한정보"; limitations = "지역지구 코드와 토지이용행위명 기반의 보조 조회입니다. 용도지역·지구의 최종 확정과 인허가 가능성은 토지이음 원문 및 관할 행정기관 확인이 필요합니다."; }
         else if (input.category === "environment") { upstream = await fetchAirQuality(input.stationName ?? ""); sourceName = "에어코리아"; limitations = "대지 직접 측정값이 아닌 인근 측정소 관측값입니다."; }
         else if (input.category === "transport") { upstream = input.busStopId ? await fetchGwangjuArrivals(input.busStopId) : await fetchGwangjuStations(); sourceName = "광주광역시 BIS"; limitations = "광주광역시 버스 정보 범위이며 실시간 정보는 조회 시점에 달라질 수 있습니다."; }
         else if (input.category === "facility") { upstream = await fetchWelfareFacilities(input.districtName ?? ""); sourceName = "한국사회보장정보원 사회복지시설"; limitations = "원천 데이터에 좌표가 없어 주소 지오코딩 품질을 확인한 결과만 지도·반경 분석에 사용해야 합니다."; }
@@ -94,6 +94,10 @@ export const appRouter = router({
       }
     }),
     snapshots: protectedProcedure.input(z.object({ projectId: z.number().int().positive() })).query(async ({ ctx, input }) => { await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin"); return db.listSnapshots(input.projectId); }),
+    airStations: protectedProcedure.input(z.object({ address: z.string().min(2).max(120) })).query(async ({ input }) => {
+      try { return { status: "success" as const, result: await fetchAirStations(input.address) }; }
+      catch (error) { return { status: "unavailable" as const, error: safeExternalError(error) }; }
+    }),
   }),
   reports: router({
     list: protectedProcedure.input(z.object({ projectId: z.number().int().positive() })).query(async ({ ctx, input }) => { await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin"); return db.listAiReports(input.projectId); }),
