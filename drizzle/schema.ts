@@ -44,11 +44,41 @@ export const sites = mysqlTable("sites", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+export const siteParcels = mysqlTable("siteParcels", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull().unique(),
+  pnu: varchar("pnu", { length: 32 }),
+  parcelNumber: varchar("parcelNumber", { length: 96 }),
+  landCategory: varchar("landCategory", { length: 64 }),
+  officialAreaSqm: varchar("officialAreaSqm", { length: 32 }),
+  boundaryGeoJson: text("boundaryGeoJson"),
+  sourceProvider: varchar("sourceProvider", { length: 64 }).notNull(),
+  sourceLayer: varchar("sourceLayer", { length: 128 }).notNull(),
+  sourceUrl: text("sourceUrl"),
+  sourceUpdatedAt: varchar("sourceUpdatedAt", { length: 64 }),
+  selectionMethod: mysqlEnum("parcelSelectionMethod", ["map_click", "drawn_boundary", "manual_pnu"]).notNull(),
+  selectedAt: timestamp("selectedAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const investigationPlans = mysqlTable("investigationPlans", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull().unique(),
+  selectedLenses: text("selectedLenses").notNull(),
+  priorityOrder: text("priorityOrder").notNull(),
+  recommendedDatasets: text("recommendedDatasets").notNull(),
+  approvedDatasetIds: text("approvedDatasetIds").notNull(),
+  contextScopes: text("contextScopes").notNull(),
+  status: mysqlEnum("investigationPlanStatus", ["draft", "approved", "collecting", "collected", "partial"]).default("draft").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export const analysisSnapshots = mysqlTable("analysisSnapshots", {
   id: int("id").autoincrement().primaryKey(),
   projectId: int("projectId").notNull(),
   siteId: int("siteId"),
-  category: mysqlEnum("analysisCategory", ["regulation", "environment", "transport", "parking", "facility", "commerce", "park", "manual"]).notNull(),
+  category: mysqlEnum("analysisCategory", ["parcel", "regulation", "environment", "transport", "parking", "facility", "commerce", "park", "demographics", "terrain", "building", "culture", "manual"]).notNull(),
   sourceName: varchar("sourceName", { length: 160 }).notNull(),
   sourceUrl: text("sourceUrl"),
   rawPayload: text("rawPayload"),

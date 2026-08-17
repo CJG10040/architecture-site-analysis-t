@@ -5,10 +5,10 @@ vi.mock("../db", () => ({
 }));
 
 vi.mock("./credentialCrypto", () => ({
-  decryptSecret: vi.fn(() => JSON.stringify({ primary: "test-service-key" })),
+  decryptSecret: vi.fn(() => JSON.stringify({ primary: "test-service-key", secondary: "test-consumer-secret" })),
 }));
 
-const { fetchCityParks, fetchCommerceInRadius, fetchLandUse } = await import("./dataAdapters");
+const { fetchCityParks, fetchCommerceInRadius, fetchLandUse, fetchSgisCensusSummary, fetchVworldParcelCandidates, normalizeVworldParcelCandidates } = await import("./dataAdapters");
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -47,5 +47,60 @@ describe("site-context layers", () => {
     const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
     expect(requestUrl.hostname).toBe("api.data.go.kr");
     expect(requestUrl.pathname).toBe("/openapi/tn_pubr_public_cty_park_info_api");
+  });
+});
+
+describe("VWorld parcel candidates", () => {
+  it("queries the continuous cadastral layer at the selected point", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ response: { result: { featureCollection: { features: [] } } } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await fetchVworldParcelCandidates({ latitude: 35.1467, longitude: 126.921 });
+    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(requestUrl.hostname).toBe("api.vworld.kr");
+    expect(requestUrl.searchParams.get("data")).toBe("LP_PA_CBND_BUBUN");
+    expect(requestUrl.searchParams.get("geomFilter")).toBe("POINT(126.921 35.1467)");
+    expect(requestUrl.searchParams.get("key")).toBe("test-service-key");
+  });
+
+  it("normalizes a feature into a safe parcel candidate", () => {
+    const candidates = normalizeVworldParcelCandidates({ response: { result: { featureCollection: { features: [{ properties: { PNU: "2911010800100010000", JIBUN: "광산동 1-1", JIMOK: "대", AREA: 321.5 }, geometry: { type: "Polygon", coordinates: [[[126.9, 35.1], [126.91, 35.1], [126.9, 35.1]]] } }] } } } });
+    expect(candidates[0]).toMatchObject({ pnu: "2911010800100010000", parcelNumber: "광산동 1-1", landCategory: "대", officialAreaSqm: "321.5" });
+    expect(candidates[0]?.boundaryGeoJson).toContain("Polygon");
+  });
+});
+
+describe("SGIS census summary", () => {
+  it("authenticates with the encrypted key pair and queries the parcel's city-county-district context", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ errCd: "0", result: { accessToken: "temporary-token" } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ errCd: "0", result: [{ tot_ppltn: "100" }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ errCd: "0", result: [{ tot_house: "40" }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ errCd: "0", result: [{ corp_cnt: "20" }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchSgisCensusSummary({ pnu: "2911010800100010000" });
+    const authUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    const populationUrl = new URL(String(fetchMock.mock.calls[1]?.[0]));
+    expect(authUrl.pathname).toBe("/OpenAPI3/auth/authentication.json");
+    expect(authUrl.searchParams.get("consumer_key")).toBe("test-service-key");
+    expect(authUrl.searchParams.get("consumer_secret")).toBe("test-consumer-secret");
+    expect(populationUrl.pathname).toBe("/OpenAPI3/stats/population.json");
+    expect(populationUrl.searchParams.get("adm_cd")).toBe("29110");
+    expect(result.data.population).toEqual([{ tot_ppltn: "100" }]);
+  });
+
+  it("keeps available population and company data when one statistical section is unavailable", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ errCd: "0", result: { accessToken: "temporary-token" } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ errCd: "0", result: [{ tot_ppltn: "100" }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ errCd: "-100", errMsg: "검색결과가 존재하지 않습니다." }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ errCd: "0", result: [{ corp_cnt: "20" }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchSgisCensusSummary({ administrativeCode: "29110" });
+    expect(result.data.population).toEqual([{ tot_ppltn: "100" }]);
+    expect(result.data.company).toEqual([{ corp_cnt: "20" }]);
+    expect(result.data.household).toEqual([]);
+    expect(result.data.unavailableSections).toHaveLength(1);
   });
 });

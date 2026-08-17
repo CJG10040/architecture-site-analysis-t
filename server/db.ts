@@ -137,7 +137,39 @@ export async function getSiteForProject(projectId: number) {
   return (await db.select().from(schema.sites).where(eq(schema.sites.projectId, projectId)).limit(1))[0];
 }
 
-export async function createSnapshot(input: { projectId: number; siteId?: number; category: "regulation" | "environment" | "transport" | "parking" | "facility" | "commerce" | "park" | "manual"; sourceName: string; sourceUrl?: string; rawPayload?: string; normalizedPayload?: string; spatialScope?: string; dataUnit?: string; reliability?: "high" | "medium" | "low" | "unknown"; limitations?: string; status: "success" | "empty" | "unavailable" | "error" }) {
+export async function saveSiteParcel(input: { projectId: number; pnu?: string; parcelNumber?: string; landCategory?: string; officialAreaSqm?: string; boundaryGeoJson?: string; sourceProvider: string; sourceLayer: string; sourceUrl?: string; sourceUpdatedAt?: string; selectionMethod: "map_click" | "drawn_boundary" | "manual_pnu" }) {
+  const db = await requireDb();
+  const existing = (await db.select().from(schema.siteParcels).where(eq(schema.siteParcels.projectId, input.projectId)).limit(1))[0];
+  if (existing) {
+    await db.update(schema.siteParcels).set({ ...input, selectedAt: new Date() }).where(eq(schema.siteParcels.id, existing.id));
+    return existing.id;
+  }
+  const result = await db.insert(schema.siteParcels).values(input);
+  return Number(result[0]?.insertId);
+}
+
+export async function getSiteParcel(projectId: number) {
+  const db = await requireDb();
+  return (await db.select().from(schema.siteParcels).where(eq(schema.siteParcels.projectId, projectId)).limit(1))[0];
+}
+
+export async function saveInvestigationPlan(input: { projectId: number; selectedLenses: string; priorityOrder: string; recommendedDatasets: string; approvedDatasetIds: string; contextScopes: string; status?: "draft" | "approved" | "collecting" | "collected" | "partial" }) {
+  const db = await requireDb();
+  const existing = (await db.select().from(schema.investigationPlans).where(eq(schema.investigationPlans.projectId, input.projectId)).limit(1))[0];
+  if (existing) {
+    await db.update(schema.investigationPlans).set(input).where(eq(schema.investigationPlans.id, existing.id));
+    return existing.id;
+  }
+  const result = await db.insert(schema.investigationPlans).values(input);
+  return Number(result[0]?.insertId);
+}
+
+export async function getInvestigationPlan(projectId: number) {
+  const db = await requireDb();
+  return (await db.select().from(schema.investigationPlans).where(eq(schema.investigationPlans.projectId, projectId)).limit(1))[0];
+}
+
+export async function createSnapshot(input: { projectId: number; siteId?: number; category: "parcel" | "regulation" | "environment" | "transport" | "parking" | "facility" | "commerce" | "park" | "demographics" | "terrain" | "building" | "culture" | "manual"; sourceName: string; sourceUrl?: string; rawPayload?: string; normalizedPayload?: string; spatialScope?: string; dataUnit?: string; reliability?: "high" | "medium" | "low" | "unknown"; limitations?: string; status: "success" | "empty" | "unavailable" | "error" }) {
   const db = await requireDb();
   const result = await db.insert(schema.analysisSnapshots).values(input);
   return Number(result[0]?.insertId);
@@ -267,11 +299,13 @@ export async function nearbyParking(latitude: number, longitude: number, radiusM
 export async function getProjectBundle(projectId: number) {
   const project = await getProject(projectId);
   const site = await getSiteForProject(projectId);
+  const parcel = await getSiteParcel(projectId);
+  const investigationPlan = await getInvestigationPlan(projectId);
   const snapshots = await listSnapshots(projectId);
   const observations = await listObservations(projectId);
   const attachments = await listFieldAttachments(projectId);
   const relationships = await listRelationshipCards(projectId);
   const cards = await listDesignCards(projectId);
   const reports = await listAiReports(projectId);
-  return { project, site, snapshots, observations, attachments, relationships, cards, reports };
+  return { project, site, parcel, investigationPlan, snapshots, observations, attachments, relationships, cards, reports };
 }

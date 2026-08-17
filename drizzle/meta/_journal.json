@@ -29,6 +29,13 @@
       "when": 1786942784413,
       "tag": "0003_unknown_jack_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1786978019532,
+      "tag": "0004_ordinary_shockwave",
+      "breakpoints": true
     }
   ]
 }
