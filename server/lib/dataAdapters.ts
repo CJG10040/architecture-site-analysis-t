@@ -1,5 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import { decryptSecret } from "./credentialCrypto";
+import { deriveSgisSggCodeFromPnu } from "./sgisAdministrativeCode";
 import * as db from "../db";
 import type { CredentialGroup } from "../../shared/integrations";
 
@@ -107,27 +108,31 @@ export async function fetchVworldParcelCandidates(input: { latitude: number; lon
 }
 
 async function sgisRequest(url: URL) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const response = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
-    const body = await response.text();
-    if (!response.ok) throw new ExternalDataError("UPSTREAM_ERROR", `SGIS 서비스가 ${response.status} 상태로 응답했습니다.`, response.status);
-    const data = JSON.parse(body) as Record<string, unknown>;
-    if (Number(data.errCd ?? 0) !== 0) throw new ExternalDataError("UPSTREAM_ERROR", `SGIS 서비스가 요청을 거부했습니다: ${String(data.errMsg ?? data.errCd)}`, response.status);
-    return { data, status: response.status };
-  } catch (error) {
-    if (error instanceof ExternalDataError) throw error;
-    throw new ExternalDataError("UNAVAILABLE", `SGIS 통계 서비스 연결에 실패했습니다: ${compactError(error instanceof Error ? error.message : "알 수 없는 오류")}`);
-  } finally {
-    clearTimeout(timer);
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20_000);
+    try {
+      const response = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
+      const body = await response.text();
+      if (!response.ok) throw new ExternalDataError("UPSTREAM_ERROR", `SGIS 서비스가 ${response.status} 상태로 응답했습니다.`, response.status);
+      const data = JSON.parse(body) as Record<string, unknown>;
+      if (Number(data.errCd ?? 0) !== 0) throw new ExternalDataError("UPSTREAM_ERROR", `SGIS 서비스가 요청을 거부했습니다: ${String(data.errMsg ?? data.errCd)}`, response.status);
+      return { data, status: response.status };
+    } catch (error) {
+      if (error instanceof ExternalDataError) throw error;
+      lastError = error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  throw new ExternalDataError("UNAVAILABLE", `SGIS 통계 서비스 연결에 실패했습니다: ${compactError(lastError instanceof Error ? lastError.message : "알 수 없는 오류")}`);
 }
 
 export async function fetchSgisCensusSummary(input: { administrativeCode?: string; pnu?: string }) {
   const credentials = await getProviderCredentials("sgis");
   if (!credentials.secondary) throw new ExternalDataError("NOT_CONFIGURED", "SGIS 인구·가구·사업체 조회에는 Consumer Key와 Consumer Secret을 모두 등록해야 합니다.");
-  const administrativeCode = input.administrativeCode?.trim() || input.pnu?.slice(0, 5);
+  const administrativeCode = input.administrativeCode?.trim() || deriveSgisSggCodeFromPnu(input.pnu);
   if (!administrativeCode || !/^\d{5}$/.test(administrativeCode)) throw new ExternalDataError("BAD_REQUEST", "SGIS 통계 조회에는 확정 필지의 PNU 또는 5자리 시·군·구 코드가 필요합니다.");
   const authUrl = new URL("https://sgisapi.kostat.go.kr/OpenAPI3/auth/authentication.json");
   authUrl.searchParams.set("consumer_key", credentials.primary);
@@ -232,4 +237,56 @@ export async function fetchCommerceInRadius(latitude: number, longitude: number,
 
 export async function fetchCityParks() {
   return publicDataRequest("dataGoKr", "https://api.data.go.kr/openapi/tn_pubr_public_cty_park_info_api", { pageNo: 1, numOfRows: 100, type: "json" });
+}
+
+export async function fetchSafeMapSecurityLights() {
+  const key = await getProviderKey("safeMap");
+  const url = new URL("http://www.safemap.go.kr/openapi2/IF_0102_WMS");
+  Object.entries({ serviceKey: key, service: "WMS", request: "GetMap", version: "1.1.1", layers: "A2SM_CMMNPOI_SECULIGHT", styles: "A2SM_CMMNPOI_07", srs: "EPSG:4326", bbox: "126.84814453125,35.137879119634185,126.859130859375,35.146862906756304", format: "image/png", width: "64", height: "64", transparent: "TRUE" }).forEach(([name, value]) => url.searchParams.set(name, value));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: { Accept: "image/png, application/xml;q=0.9" } });
+    const body = await response.text();
+    if (!response.ok) {
+      const message = body.match(/"resultMsg"\s*:\s*"([^"]+)"/)?.[1] || "생활안전정보 WMS가 요청을 거부했습니다.";
+      throw new ExternalDataError("UPSTREAM_ERROR", `생활안전정보 보안등 WMS: ${message}`, response.status);
+    }
+    return { data: { layer: "A2SM_CMMNPOI_SECULIGHT", contentType: response.headers.get("content-type") }, sourceUrl: url.origin + url.pathname, status: response.status };
+  } catch (error) {
+    if (error instanceof ExternalDataError) throw error;
+    throw new ExternalDataError("UNAVAILABLE", `생활안전정보 WMS 연결에 실패했습니다: ${compactError(error instanceof Error ? error.message : "알 수 없는 오류")}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function fetchOpenRouteWalkingRoute(input: { fromLongitude: number; fromLatitude: number; toLongitude: number; toLatitude: number }) {
+  const key = await getProviderKey("openRouteService");
+  const url = new URL("https://api.openrouteservice.org/v2/directions/foot-walking");
+  url.searchParams.set("start", `${input.fromLongitude},${input.fromLatitude}`);
+  url.searchParams.set("end", `${input.toLongitude},${input.toLatitude}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: { Authorization: key, Accept: "application/geo+json" } });
+    const body = await response.text();
+    if (!response.ok) throw new ExternalDataError("UPSTREAM_ERROR", `OpenRouteService가 ${response.status} 상태로 응답했습니다.`, response.status);
+    return { data: JSON.parse(body) as unknown, sourceUrl: url.origin + url.pathname, status: response.status };
+  } catch (error) {
+    if (error instanceof ExternalDataError) throw error;
+    throw new ExternalDataError("UNAVAILABLE", `OpenRouteService 연결에 실패했습니다: ${compactError(error instanceof Error ? error.message : "알 수 없는 오류")}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function validateProviderCredential(provider: Provider) {
+  switch (provider) {
+    case "dataGoKr": return fetchAirStations("광주광역시");
+    case "sgis": return fetchSgisCensusSummary({ pnu: "2911010800100010000" });
+    case "vworld": return fetchVworldParcelCandidates({ latitude: 35.1467, longitude: 126.921 });
+    case "safeMap": return fetchSafeMapSecurityLights();
+    case "openRouteService": return fetchOpenRouteWalkingRoute({ fromLongitude: 126.921, fromLatitude: 35.1467, toLongitude: 126.922, toLatitude: 35.1477 });
+  }
 }

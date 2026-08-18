@@ -276,6 +276,11 @@ export async function disableApiCredential(provider: string) {
   await db.update(schema.apiCredentials).set({ isEnabled: false }).where(eq(schema.apiCredentials.provider, provider));
 }
 
+export async function recordApiCredentialValidation(provider: string, success: boolean, safeError?: string) {
+  const db = await requireDb();
+  await db.update(schema.apiCredentials).set({ lastValidatedAt: new Date(), lastValidationError: success ? null : safeError?.slice(0, 280) || "연결을 확인하지 못했습니다." }).where(eq(schema.apiCredentials.provider, provider));
+}
+
 export async function recordApiAudit(input: { provider: string; operation: string; success: boolean; responseStatus?: number; safeMessage?: string; initiatedBy?: number }) {
   const db = await requireDb();
   await db.insert(schema.apiAuditLogs).values(input);

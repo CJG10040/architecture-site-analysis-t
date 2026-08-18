@@ -8,7 +8,7 @@ vi.mock("./credentialCrypto", () => ({
   decryptSecret: vi.fn(() => JSON.stringify({ primary: "test-service-key", secondary: "test-consumer-secret" })),
 }));
 
-const { fetchCityParks, fetchCommerceInRadius, fetchLandUse, fetchSgisCensusSummary, fetchVworldParcelCandidates, normalizeVworldParcelCandidates } = await import("./dataAdapters");
+const { fetchCityParks, fetchCommerceInRadius, fetchLandUse, fetchOpenRouteWalkingRoute, fetchSafeMapSecurityLights, fetchSgisCensusSummary, fetchVworldParcelCandidates, normalizeVworldParcelCandidates } = await import("./dataAdapters");
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -50,6 +50,33 @@ describe("site-context layers", () => {
   });
 });
 
+describe("provider credential health checks", () => {
+  it("requests the official SafeMap security-light WMS layer with the encrypted provider key", async () => {
+    const fetchMock = vi.fn(async () => new Response("image", { status: 200, headers: { "content-type": "image/png" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchSafeMapSecurityLights();
+
+    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(requestUrl.hostname).toBe("www.safemap.go.kr");
+    expect(requestUrl.pathname).toBe("/openapi2/IF_0102_WMS");
+    expect(requestUrl.searchParams.get("layers")).toBe("A2SM_CMMNPOI_SECULIGHT");
+    expect(requestUrl.searchParams.get("serviceKey")).toBe("test-service-key");
+  });
+
+  it("uses the ORS authorization header for a lightweight walking route", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ type: "FeatureCollection", features: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchOpenRouteWalkingRoute({ fromLongitude: 126.921, fromLatitude: 35.1467, toLongitude: 126.922, toLatitude: 35.1477 });
+
+    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(requestUrl.hostname).toBe("api.openrouteservice.org");
+    expect(requestUrl.pathname).toBe("/v2/directions/foot-walking");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ headers: { Authorization: "test-service-key" } });
+  });
+});
+
 describe("VWorld parcel candidates", () => {
   it("queries the continuous cadastral layer at the selected point", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ response: { result: { featureCollection: { features: [] } } } }), { status: 200 }));
@@ -87,7 +114,7 @@ describe("SGIS census summary", () => {
     expect(authUrl.searchParams.get("consumer_key")).toBe("test-service-key");
     expect(authUrl.searchParams.get("consumer_secret")).toBe("test-consumer-secret");
     expect(populationUrl.pathname).toBe("/OpenAPI3/stats/population.json");
-    expect(populationUrl.searchParams.get("adm_cd")).toBe("29110");
+    expect(populationUrl.searchParams.get("adm_cd")).toBe("24010");
     expect(populationUrl.searchParams.get("year")).toBe("2020");
     expect(householdUrl.searchParams.get("year")).toBe("2020");
     expect(companyUrl.searchParams.get("year")).toBe("2019");

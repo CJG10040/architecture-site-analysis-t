@@ -6,7 +6,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { encryptSecret, maskSecret } from "./lib/credentialCrypto";
-import { ExternalDataError, fetchAirQuality, fetchAirStations, fetchCityParks, fetchCommerceInRadius, fetchGwangjuArrivals, fetchGwangjuStations, fetchLandUse, fetchSgisCensusSummary, fetchVworldParcelCandidates, fetchWelfareFacilities } from "./lib/dataAdapters";
+import { ExternalDataError, fetchAirQuality, fetchAirStations, fetchCityParks, fetchCommerceInRadius, fetchGwangjuArrivals, fetchGwangjuStations, fetchLandUse, fetchSgisCensusSummary, fetchVworldParcelCandidates, fetchWelfareFacilities, validateProviderCredential } from "./lib/dataAdapters";
 import { generateSiteReport } from "./lib/reportGenerator";
 import { credentialGroupIds } from "../shared/integrations";
 import { investigationLenses, recommendContextScopes, recommendInvestigationDatasets } from "../shared/investigationPlan";
@@ -297,6 +297,19 @@ export const appRouter = router({
         await db.upsertApiCredential({ provider: input.group, ...encrypted, updatedBy: ctx.user.id, isEnabled: input.isEnabled });
         await db.recordApiAudit({ provider: input.group, operation: "credential_upsert", success: true, safeMessage: "제공기관 공통 키가 암호화되어 저장되었습니다.", initiatedBy: ctx.user.id });
         return { success: true };
+      }),
+      validate: adminProcedure.input(z.object({ group: z.enum(providers) })).mutation(async ({ ctx, input }) => {
+        try {
+          const result = await validateProviderCredential(input.group);
+          await db.recordApiCredentialValidation(input.group, true);
+          await db.recordApiAudit({ provider: input.group, operation: "credential_validate", success: true, responseStatus: result.status, safeMessage: "실제 경량 요청으로 API 키를 검증했습니다.", initiatedBy: ctx.user.id });
+          return { success: true as const, message: "실제 제공기관 응답을 확인했습니다." };
+        } catch (error) {
+          const failure = safeExternalError(error);
+          await db.recordApiCredentialValidation(input.group, false, failure.message);
+          await db.recordApiAudit({ provider: input.group, operation: "credential_validate", success: false, responseStatus: failure.status, safeMessage: failure.message, initiatedBy: ctx.user.id });
+          return { success: false as const, message: failure.message };
+        }
       }),
       disable: adminProcedure.input(z.object({ group: z.enum(providers) })).mutation(async ({ ctx, input }) => { await db.disableApiCredential(input.group); await db.recordApiAudit({ provider: input.group, operation: "credential_disable", success: true, initiatedBy: ctx.user.id }); return { success: true }; }),
     }),
