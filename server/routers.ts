@@ -110,9 +110,10 @@ export const appRouter = router({
   investigation: router({
     preview: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), lenses: z.array(z.enum(investigationLenses)).min(1).max(investigationLenses.length) })).query(async ({ ctx, input }) => {
       await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin");
-      const [dataGoKr, sgis, vworld] = await Promise.all([db.getApiCredential("dataGoKr"), db.getApiCredential("sgis"), db.getApiCredential("vworld")]);
+      const [dataGoKr, sgis, vworld, parcel] = await Promise.all([db.getApiCredential("dataGoKr"), db.getApiCredential("sgis"), db.getApiCredential("vworld"), db.getSiteParcel(input.projectId)]);
+      const datasets = recommendInvestigationDatasets(input.lenses).map(dataset => (dataset.id === "sgis-demographics" || dataset.id === "sgis-business") && !parcel?.pnu ? { ...dataset, access: "approval_needed" as const, rationale: `${dataset.rationale} PNU는 필수가 아니며, 현재는 주소·경계 기반 조사를 먼저 진행할 수 있습니다.`, limitation: "PNU가 없으면 SGIS 시군구 통계는 보류됩니다. 다른 공공데이터·현장조사는 계속 수집할 수 있습니다." } : dataset);
       return {
-        datasets: recommendInvestigationDatasets(input.lenses),
+        datasets,
         scopes: recommendContextScopes(input.lenses),
         providerAvailability: { dataGoKr: Boolean(dataGoKr?.isEnabled), sgis: Boolean(sgis?.isEnabled), vworld: Boolean(vworld?.isEnabled) },
       };
@@ -170,7 +171,7 @@ export const appRouter = router({
             const upstream = await fetchAirQuality(stationName);
             await save(id, "environment", "에어코리아 인근 측정소 대기질", upstream, `인근 측정소 ${stationName}`, "대지 직접 측정값이 아닌 인근 측정소 관측값이며, 관측 시각과 거리를 함께 확인해야 합니다.", "측정소 관측 농도" );
           } else if (id === "sgis-demographics" || id === "sgis-business") {
-            if (!parcel?.pnu) { results.push({ id, status: "unavailable", message: "SGIS 통계 수집에는 확정 필지의 PNU가 필요합니다. 연속지적도 후보 또는 PNU 직접 입력으로 필지를 먼저 확정하세요." }); continue; }
+            if (!parcel?.pnu) { results.push({ id, status: "unavailable", message: "PNU가 없어 SGIS 시군구 통계만 보류했습니다. 주소·대지 경계 기반 공공데이터와 현장조사는 계속 진행할 수 있습니다." }); continue; }
             const upstream = await fetchSgisCensusSummary({ pnu: parcel.pnu });
             const data = id === "sgis-business" ? { administrativeCode: upstream.data.administrativeCode, baseYears: upstream.data.baseYears, company: upstream.data.company, unavailableSections: upstream.data.unavailableSections } : { administrativeCode: upstream.data.administrativeCode, baseYears: upstream.data.baseYears, population: upstream.data.population, household: upstream.data.household, unavailableSections: upstream.data.unavailableSections };
             const partialWarning = upstream.data.unavailableSections.length ? ` 응답 보류: ${upstream.data.unavailableSections.join(" / ")}` : "";
