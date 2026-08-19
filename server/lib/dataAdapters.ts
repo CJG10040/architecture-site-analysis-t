@@ -1,5 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import { decryptSecret } from "./credentialCrypto";
+import { findLocalCadastralCandidates } from "./localCadastral";
 import { deriveSgisSggCodeFromPnu } from "./sgisAdministrativeCode";
 import * as db from "../db";
 import type { CredentialGroup } from "../../shared/integrations";
@@ -77,7 +78,7 @@ async function vworldDataRequest(params: Record<string, string | number | undefi
   }
 }
 
-export type ParcelCandidate = { pnu?: string; parcelNumber?: string; landCategory?: string; officialAreaSqm?: string; boundaryGeoJson?: string; rawProperties: Record<string, unknown> };
+export type ParcelCandidate = { pnu?: string; parcelNumber?: string; landCategory?: string; officialAreaSqm?: string; boundaryGeoJson?: string; rawProperties: Record<string, unknown>; sourceProvider?: string; sourceLayer?: string; sourceUrl?: string; sourceUpdatedAt?: string };
 
 export function normalizeVworldParcelCandidates(data: unknown): ParcelCandidate[] {
   const root = data && typeof data === "object" ? data as Record<string, unknown> : {};
@@ -103,8 +104,28 @@ export function normalizeVworldParcelCandidates(data: unknown): ParcelCandidate[
 
 export async function fetchVworldParcelCandidates(input: { latitude: number; longitude: number }) {
   if (input.latitude < -90 || input.latitude > 90 || input.longitude < -180 || input.longitude > 180) throw new ExternalDataError("BAD_REQUEST", "필지 후보 조회 좌표가 유효하지 않습니다.");
-  const upstream = await vworldDataRequest({ geomFilter: `POINT(${input.longitude} ${input.latitude})`, size: 12 });
-  return { ...upstream, candidates: normalizeVworldParcelCandidates(upstream.data) };
+  const localFallback = async () => {
+    const candidates = await findLocalCadastralCandidates(input);
+    if (!candidates.length) return undefined;
+    return {
+      data: { provider: "local_cadastral", candidates },
+      candidates,
+      sourceUrl: candidates[0]?.sourceUrl ?? "https://www.vworld.kr/dtmk/dtmk_ntads_s002.do",
+      status: 200,
+      source: "local" as const,
+    };
+  };
+  try {
+    const upstream = await vworldDataRequest({ geomFilter: `POINT(${input.longitude} ${input.latitude})`, size: 12 });
+    const candidates = normalizeVworldParcelCandidates(upstream.data);
+    if (candidates.length) return { ...upstream, candidates, source: "vworld" as const };
+    const fallback = await localFallback();
+    return fallback ?? { ...upstream, candidates, source: "vworld" as const };
+  } catch (error) {
+    const fallback = await localFallback();
+    if (fallback) return fallback;
+    throw error;
+  }
 }
 
 async function sgisRequest(url: URL) {

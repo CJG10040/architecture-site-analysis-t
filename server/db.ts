@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import * as schema from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -284,6 +284,60 @@ export async function recordApiCredentialValidation(provider: string, success: b
 export async function recordApiAudit(input: { provider: string; operation: string; success: boolean; responseStatus?: number; safeMessage?: string; initiatedBy?: number }) {
   const db = await requireDb();
   await db.insert(schema.apiAuditLogs).values(input);
+}
+
+export async function listActiveCadastralImports() {
+  const db = await requireDb();
+  return db.select({ id: schema.cadastralImports.id, districtCode: schema.cadastralImports.districtCode, districtName: schema.cadastralImports.districtName, datasetReference: schema.cadastralImports.datasetReference, featureCount: schema.cadastralImports.featureCount, sourceFileName: schema.cadastralImports.sourceFileName, sourceFileUrl: schema.cadastralImports.sourceFileUrl, importedAt: schema.cadastralImports.importedAt }).from(schema.cadastralImports).where(eq(schema.cadastralImports.status, "active")).orderBy(desc(schema.cadastralImports.datasetReference));
+}
+
+export async function findActiveCadastralParcelsAtPoint(latitude: number, longitude: number) {
+  const db = await requireDb();
+  return db.select({ pnu: schema.cadastralParcels.pnu, jibun: schema.cadastralParcels.jibun, landIndicator: schema.cadastralParcels.landIndicator, localAdminCode: schema.cadastralParcels.localAdminCode, geometryGzipBase64: schema.cadastralParcels.geometryGzipBase64, importId: schema.cadastralImports.id, districtName: schema.cadastralImports.districtName, datasetReference: schema.cadastralImports.datasetReference, sourceFileName: schema.cadastralImports.sourceFileName, sourceFileUrl: schema.cadastralImports.sourceFileUrl }).from(schema.cadastralParcels).innerJoin(schema.cadastralImports, eq(schema.cadastralParcels.importId, schema.cadastralImports.id)).where(and(eq(schema.cadastralImports.status, "active"), lte(schema.cadastralParcels.minLongitude, longitude), gte(schema.cadastralParcels.maxLongitude, longitude), lte(schema.cadastralParcels.minLatitude, latitude), gte(schema.cadastralParcels.maxLatitude, latitude))).limit(64);
+}
+
+export type CadastralParcelRow = { pnu: string; jibun?: string; landIndicator?: string; localAdminCode?: string; minLongitude: number; minLatitude: number; maxLongitude: number; maxLatitude: number; geometryGzipBase64: string };
+
+export async function listCadastralImportHistory() {
+  const db = await requireDb();
+  return db.select().from(schema.cadastralImports).orderBy(desc(schema.cadastralImports.importedAt));
+}
+
+export async function beginCadastralImport(input: { districtCode: string; districtName: string; datasetReference: string; sourceFileName: string; sourceFileKey?: string; sourceFileUrl?: string; sha256: string; featureCount: number; coordinateReference: string; importedBy: number }) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const existing = await tx.select({ id: schema.cadastralImports.id, status: schema.cadastralImports.status }).from(schema.cadastralImports).where(and(eq(schema.cadastralImports.districtCode, input.districtCode), eq(schema.cadastralImports.datasetReference, input.datasetReference))).limit(1);
+    if (existing[0]) {
+      if (existing[0].status === "active") throw new Error("같은 구·기준일의 연속지적도가 이미 활성화되어 있습니다. 새 기준일 파일만 업로드하세요.");
+      const id = existing[0].id;
+      await tx.delete(schema.cadastralParcels).where(eq(schema.cadastralParcels.importId, id));
+      await tx.update(schema.cadastralImports).set({ districtName: input.districtName, sourceFileName: input.sourceFileName, sourceFileKey: input.sourceFileKey, sourceFileUrl: input.sourceFileUrl, sha256: input.sha256, featureCount: 0, coordinateReference: input.coordinateReference, status: "processing", safeError: null, importedBy: input.importedBy }).where(eq(schema.cadastralImports.id, id));
+      return id;
+    }
+    const result = await tx.insert(schema.cadastralImports).values({ ...input, featureCount: 0, status: "processing" });
+    return Number(result[0].insertId);
+  });
+}
+
+export async function insertCadastralParcelBatch(importId: number, rows: CadastralParcelRow[]) {
+  if (!rows.length) return;
+  const db = await requireDb();
+  await db.insert(schema.cadastralParcels).values(rows.map(row => ({ importId, ...row })));
+}
+
+export async function completeCadastralImport(importId: number, featureCount: number) {
+  const db = await requireDb();
+  await db.transaction(async tx => {
+    const current = await tx.select({ districtCode: schema.cadastralImports.districtCode }).from(schema.cadastralImports).where(eq(schema.cadastralImports.id, importId)).limit(1);
+    if (!current[0]) throw new Error("연속지적도 적재 이력을 찾을 수 없습니다.");
+    await tx.update(schema.cadastralImports).set({ status: "superseded" }).where(and(eq(schema.cadastralImports.districtCode, current[0].districtCode), eq(schema.cadastralImports.status, "active")));
+    await tx.update(schema.cadastralImports).set({ status: "active", featureCount, safeError: null }).where(eq(schema.cadastralImports.id, importId));
+  });
+}
+
+export async function failCadastralImport(importId: number, safeError: string) {
+  const db = await requireDb();
+  await db.update(schema.cadastralImports).set({ status: "failed", safeError: safeError.slice(0, 280) }).where(eq(schema.cadastralImports.id, importId));
 }
 
 const toRadians = (value: number) => (value * Math.PI) / 180;

@@ -1,4 +1,4 @@
-import { boolean, int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { boolean, double, index, int, longtext, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -203,6 +203,39 @@ export const parkingFacilities = mysqlTable("parkingFacilities", {
   facilityType: varchar("facilityType", { length: 80 }),
   datasetReferenceDate: varchar("datasetReferenceDate", { length: 32 }).default("2022-12-08").notNull(),
 });
+
+export const cadastralImports = mysqlTable("cadastralImports", {
+  id: int("id").autoincrement().primaryKey(),
+  districtCode: varchar("districtCode", { length: 16 }).notNull(),
+  districtName: varchar("districtName", { length: 80 }).notNull(),
+  datasetReference: varchar("datasetReference", { length: 32 }).notNull(),
+  sourceFileName: varchar("sourceFileName", { length: 255 }).notNull(),
+  sourceFileKey: text("sourceFileKey"),
+  sourceFileUrl: text("sourceFileUrl"),
+  sha256: varchar("sha256", { length: 64 }).notNull(),
+  featureCount: int("featureCount").default(0).notNull(),
+  coordinateReference: varchar("coordinateReference", { length: 120 }),
+  status: mysqlEnum("cadastralImportStatus", ["processing", "active", "superseded", "failed"]).default("processing").notNull(),
+  safeError: varchar("safeError", { length: 280 }),
+  importedBy: int("importedBy"),
+  importedAt: timestamp("importedAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [uniqueIndex("cadastralImports_district_reference").on(table.districtCode, table.datasetReference)]);
+
+export const cadastralParcels = mysqlTable("cadastralParcels", {
+  id: int("id").autoincrement().primaryKey(),
+  importId: int("importId").notNull(),
+  pnu: varchar("pnu", { length: 32 }).notNull(),
+  jibun: varchar("jibun", { length: 96 }),
+  landIndicator: varchar("landIndicator", { length: 16 }),
+  localAdminCode: varchar("localAdminCode", { length: 16 }),
+  minLongitude: double("minLongitude").notNull(),
+  minLatitude: double("minLatitude").notNull(),
+  maxLongitude: double("maxLongitude").notNull(),
+  maxLatitude: double("maxLatitude").notNull(),
+  geometryGzipBase64: longtext("geometryGzipBase64").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => [uniqueIndex("cadastralParcels_import_pnu").on(table.importId, table.pnu), index("cadastralParcels_bbox").on(table.minLongitude, table.maxLongitude, table.minLatitude, table.maxLatitude), index("cadastralParcels_pnu").on(table.pnu)]);
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;

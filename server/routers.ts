@@ -1,4 +1,7 @@
 import { TRPCError } from "@trpc/server";
+import { createHash } from "node:crypto";
+import { gzipSync } from "node:zlib";
+import shp from "shpjs";
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -22,6 +25,47 @@ const observationTypes = ["movement", "sound", "light", "material", "boundary", 
 const attachmentTypes = ["photo", "sketch", "drawing", "document", "audio", "other"] as const;
 const relationshipTypes = ["adjacency", "access", "density", "time", "conflict", "repetition", "disconnection", "coexistence", "exclusion", "preservation", "other"] as const;
 const reviewStatuses = ["undecided", "agree", "partial", "different", "not_important", "research", "counter", "develop"] as const;
+const cadastralDistrictNames: Record<string, string> = { "12210": "동구", "12240": "서구", "12270": "남구", "12300": "북구", "12330": "광산구" };
+const MAX_CADASTRAL_ARCHIVE_BYTES = 35 * 1024 * 1024;
+
+type CadastralGeometry = { type: "Polygon" | "MultiPolygon"; coordinates: unknown };
+type CadastralFeature = { properties?: Record<string, unknown>; geometry?: CadastralGeometry };
+
+function cadastralCoordinateExtent(geometry: CadastralGeometry) {
+  const positions: Array<[number, number]> = [];
+  const visit = (value: unknown): void => {
+    if (!Array.isArray(value)) return;
+    if (value.length >= 2 && typeof value[0] === "number" && typeof value[1] === "number") positions.push([value[0], value[1]]);
+    else value.forEach(visit);
+  };
+  visit(geometry.coordinates);
+  if (!positions.length) throw new Error("도형 좌표가 없습니다.");
+  return positions.reduce<[number, number, number, number]>(([minLongitude, minLatitude, maxLongitude, maxLatitude], [longitude, latitude]) => [Math.min(minLongitude, longitude), Math.min(minLatitude, latitude), Math.max(maxLongitude, longitude), Math.max(maxLatitude, latitude)], [Infinity, Infinity, -Infinity, -Infinity]);
+}
+
+async function parseCadastralArchive(input: { originalName: string; dataUrl: string }) {
+  const encoded = input.dataUrl.match(/^data:application\/(?:zip|x-zip-compressed);base64,([A-Za-z0-9+/=]+)$/i)?.[1];
+  if (!encoded) throw new Error("ZIP 형식의 연속지적도 파일만 업로드할 수 있습니다.");
+  const buffer = Buffer.from(encoded, "base64");
+  if (!buffer.byteLength || buffer.byteLength > MAX_CADASTRAL_ARCHIVE_BYTES) throw new Error("연속지적도 ZIP은 비어 있지 않고 35MB 이하여야 합니다.");
+  const parsed = await shp(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+  const collection = (Array.isArray(parsed) ? parsed[0] : parsed) as { fileName?: string; features?: CadastralFeature[] };
+  const features = collection.features ?? [];
+  const first = features[0];
+  const districtCode = String(first?.properties?.COL_ADM_SE ?? "");
+  const districtName = cadastralDistrictNames[districtCode];
+  const datasetReference = collection.fileName?.match(/_(\d{6})$/)?.[1] ?? input.originalName.match(/_(\d{6})\.zip$/i)?.[1];
+  if (!districtName || !datasetReference || !/^\d{6}$/.test(datasetReference) || !features.length || features.length > 200_000) throw new Error("광주 5개 구의 기준일이 포함된 연속지적도 ZIP인지 확인할 수 없습니다.");
+  const rows: db.CadastralParcelRow[] = features.map(feature => {
+    const pnu = String(feature.properties?.PNU ?? "");
+    const geometry = feature.geometry;
+    if (!/^\d{19}$/.test(pnu) || !geometry || !["Polygon", "MultiPolygon"].includes(geometry.type)) throw new Error("모든 레코드에 19자리 PNU와 Polygon 또는 MultiPolygon 도형이 있어야 합니다.");
+    const [minLongitude, minLatitude, maxLongitude, maxLatitude] = cadastralCoordinateExtent(geometry);
+    if (![minLongitude, minLatitude, maxLongitude, maxLatitude].every(Number.isFinite) || minLongitude < 120 || maxLongitude > 135 || minLatitude < 30 || maxLatitude > 40) throw new Error("도형 좌표계가 WGS84 경위도 범위인지 확인할 수 없습니다.");
+    return { pnu, jibun: String(feature.properties?.JIBUN ?? "") || undefined, landIndicator: String(feature.properties?.BCHK ?? "") || undefined, localAdminCode: districtCode, minLongitude, minLatitude, maxLongitude, maxLatitude, geometryGzipBase64: gzipSync(Buffer.from(JSON.stringify(geometry))).toString("base64") };
+  });
+  return { buffer, districtCode, districtName, datasetReference, rows };
+}
 
 async function ensureProjectAccess(projectId: number, userId: number, isAdmin = false) {
   const project = isAdmin ? await db.getProject(projectId) : await db.getProjectForOwner(projectId, userId);
@@ -313,6 +357,27 @@ export const appRouter = router({
         }
       }),
       disable: adminProcedure.input(z.object({ group: z.enum(providers) })).mutation(async ({ ctx, input }) => { await db.disableApiCredential(input.group); await db.recordApiAudit({ provider: input.group, operation: "credential_disable", success: true, initiatedBy: ctx.user.id }); return { success: true }; }),
+    }),
+    cadastral: router({
+      list: adminProcedure.query(() => db.listCadastralImportHistory()),
+      upload: adminProcedure.input(z.object({ originalName: z.string().min(5).max(255).regex(/\.zip$/i, "ZIP 파일만 업로드할 수 있습니다."), dataUrl: z.string().min(100).max(48_000_000) })).mutation(async ({ ctx, input }) => {
+        let importId: number | undefined;
+        try {
+          const parsed = await parseCadastralArchive(input);
+          const safeName = input.originalName.replace(/[^0-9A-Za-z가-힣._-]/g, "-");
+          const stored = await storagePut(`admin/cadastral/${parsed.districtCode}/${parsed.datasetReference}/${Date.now()}-${safeName}`, parsed.buffer, "application/zip");
+          importId = await db.beginCadastralImport({ districtCode: parsed.districtCode, districtName: parsed.districtName, datasetReference: parsed.datasetReference, sourceFileName: input.originalName, sourceFileKey: stored.key, sourceFileUrl: stored.url, sha256: createHash("sha256").update(parsed.buffer).digest("hex"), featureCount: parsed.rows.length, coordinateReference: "WGS84 경위도 (SHP PRJ 변환)", importedBy: ctx.user.id });
+          for (let start = 0; start < parsed.rows.length; start += 100) await db.insertCadastralParcelBatch(importId, parsed.rows.slice(start, start + 100));
+          await db.completeCadastralImport(importId, parsed.rows.length);
+          await db.recordApiAudit({ provider: "localCadastral", operation: "cadastral_upload", success: true, responseStatus: 201, safeMessage: `${parsed.districtName} ${parsed.datasetReference} 연속지적도 ${parsed.rows.length.toLocaleString("ko-KR")}필지를 적재했습니다.`, initiatedBy: ctx.user.id });
+          return { success: true as const, districtName: parsed.districtName, datasetReference: parsed.datasetReference, featureCount: parsed.rows.length };
+        } catch (error) {
+          const safeMessage = error instanceof Error ? error.message.slice(0, 280) : "연속지적도 파일을 처리하지 못했습니다.";
+          if (importId) await db.failCadastralImport(importId, safeMessage);
+          await db.recordApiAudit({ provider: "localCadastral", operation: "cadastral_upload", success: false, safeMessage, initiatedBy: ctx.user.id });
+          throw new TRPCError({ code: "BAD_REQUEST", message: safeMessage });
+        }
+      }),
     }),
   }),
 });

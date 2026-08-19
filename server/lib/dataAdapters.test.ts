@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../db", () => ({
   getApiCredential: vi.fn(async () => ({ isEnabled: true, encryptedValue: "encrypted", initializationVector: "iv", authenticationTag: "tag", keyVersion: "v1" })),
+  findActiveCadastralParcelsAtPoint: vi.fn(async () => []),
 }));
 
 vi.mock("./credentialCrypto", () => ({
