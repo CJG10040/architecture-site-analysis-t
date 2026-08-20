@@ -296,6 +296,14 @@ export async function findActiveCadastralParcelsAtPoint(latitude: number, longit
   return db.select({ pnu: schema.cadastralParcels.pnu, jibun: schema.cadastralParcels.jibun, landIndicator: schema.cadastralParcels.landIndicator, localAdminCode: schema.cadastralParcels.localAdminCode, geometryGzipBase64: schema.cadastralParcels.geometryGzipBase64, importId: schema.cadastralImports.id, districtName: schema.cadastralImports.districtName, datasetReference: schema.cadastralImports.datasetReference, sourceFileName: schema.cadastralImports.sourceFileName, sourceFileUrl: schema.cadastralImports.sourceFileUrl }).from(schema.cadastralParcels).innerJoin(schema.cadastralImports, eq(schema.cadastralParcels.importId, schema.cadastralImports.id)).where(and(eq(schema.cadastralImports.status, "active"), lte(schema.cadastralParcels.minLongitude, longitude), gte(schema.cadastralParcels.maxLongitude, longitude), lte(schema.cadastralParcels.minLatitude, latitude), gte(schema.cadastralParcels.maxLatitude, latitude))).limit(64);
 }
 
+export async function findActiveCadastralParcelsNearPoint(latitude: number, longitude: number, radiusMeters = 80) {
+  const db = await requireDb();
+  const safeRadius = Math.min(Math.max(radiusMeters, 20), 250);
+  const latitudeDelta = safeRadius / 111_132;
+  const longitudeDelta = safeRadius / Math.max(111_320 * Math.cos((latitude * Math.PI) / 180), 1);
+  return db.select({ pnu: schema.cadastralParcels.pnu, jibun: schema.cadastralParcels.jibun, landIndicator: schema.cadastralParcels.landIndicator, localAdminCode: schema.cadastralParcels.localAdminCode, geometryGzipBase64: schema.cadastralParcels.geometryGzipBase64, importId: schema.cadastralImports.id, districtName: schema.cadastralImports.districtName, datasetReference: schema.cadastralImports.datasetReference, sourceFileName: schema.cadastralImports.sourceFileName, sourceFileUrl: schema.cadastralImports.sourceFileUrl }).from(schema.cadastralParcels).innerJoin(schema.cadastralImports, eq(schema.cadastralParcels.importId, schema.cadastralImports.id)).where(and(eq(schema.cadastralImports.status, "active"), lte(schema.cadastralParcels.minLongitude, longitude + longitudeDelta), gte(schema.cadastralParcels.maxLongitude, longitude - longitudeDelta), lte(schema.cadastralParcels.minLatitude, latitude + latitudeDelta), gte(schema.cadastralParcels.maxLatitude, latitude - latitudeDelta))).limit(160);
+}
+
 export type CadastralParcelRow = { pnu: string; jibun?: string; landIndicator?: string; localAdminCode?: string; minLongitude: number; minLatitude: number; maxLongitude: number; maxLatitude: number; geometryGzipBase64: string };
 
 export async function listCadastralImportHistory() {

@@ -15,6 +15,7 @@ import { credentialGroupIds } from "../shared/integrations";
 import { investigationLenses, recommendContextScopes, recommendInvestigationDatasets } from "../shared/investigationPlan";
 import { normalizeBoundaryGeoJson } from "./lib/boundaryGeoJson";
 import { summarizeEvidence } from "./lib/evidenceSummary";
+import { findLocalCadastralContext } from "./lib/localCadastral";
 import { storageGetSignedUrl, storagePut } from "./storage";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { decodeFieldMaterialPayload, isAllowedFieldMaterialMimeType, MAX_FIELD_MATERIAL_BYTES, sanitizeFieldMaterialName } from "./lib/fieldMaterials";
@@ -138,6 +139,14 @@ export const appRouter = router({
         await db.recordApiAudit({ provider: "vworld", operation: "parcel_candidates", success: false, responseStatus: failure.status, safeMessage: failure.message, initiatedBy: ctx.user.id });
         return { status: "unavailable" as const, error: failure, candidates: [] };
       }
+    }),
+    context: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), radiusMeters: z.number().int().min(20).max(250).default(80) })).query(async ({ ctx, input }) => {
+      await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin");
+      const [site, parcel] = await Promise.all([db.getSiteForProject(input.projectId), db.getSiteParcel(input.projectId)]);
+      if (!site) return { status: "not_ready" as const, message: "인접 필지를 읽으려면 먼저 대지 위치를 저장하세요.", candidates: [] };
+      const context = await findLocalCadastralContext({ latitude: Number(site.latitude), longitude: Number(site.longitude), selectedPnu: parcel?.pnu, radiusMeters: input.radiusMeters });
+      if (!context.candidates.length) return { status: "unavailable" as const, message: "현재 위치 주변에서 활성 로컬 연속지적도 필지를 찾지 못했습니다. 광주 5개 구 범위와 기준일을 관리자 설정에서 확인하세요.", ...context };
+      return { status: "ready" as const, radiusMeters: input.radiusMeters, ...context };
     }),
     confirm: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), pnu: z.string().regex(/^\d{19}$/, "PNU는 19자리 숫자여야 합니다.").optional(), parcelNumber: z.string().max(96).optional(), landCategory: z.string().max(64).optional(), officialAreaSqm: z.string().max(32).optional(), boundaryGeoJson: z.string().max(100_000).optional(), sourceProvider: z.string().min(2).max(64).default("VWorld"), sourceLayer: z.string().min(2).max(128).default("LP_PA_CBND_BUBUN"), sourceUrl: z.string().url().optional(), sourceUpdatedAt: z.string().max(64).optional(), selectionMethod: z.enum(["map_click", "drawn_boundary", "manual_pnu"]) })).mutation(async ({ ctx, input }) => {
       await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin");
