@@ -33,10 +33,10 @@ export const credentialGroups = [
     id: "safeMap",
     name: "생활안전정보",
     shortName: "SafeMap",
-    description: "재난·안전 WMS 레이어를 선택적으로 불러오기 위한 키입니다.",
+    description: "재난·안전 WMS 레이어를 선택적으로 불러오기 위한 키입니다. 보안등은 A2SM_CMMNPOI_SECULIGHT / A2SM_CMMNPOI_07 개별 활용 승인 후에만 조회됩니다.",
     fields: [{ id: "primary", label: "서비스 키", placeholder: "생활안전정보 서비스 키" }],
     activeServices: [],
-    plannedServices: ["하천범람 위험 WMS", "생활안전 레이어"],
+    plannedServices: ["하천범람 위험 WMS", "보안등 WMS · My Data 개별 승인 확인", "기타 생활안전 레이어"],
   },
   {
     id: "openRouteService",

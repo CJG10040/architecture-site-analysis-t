@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { isTerrainAnalysisResult } from "@/lib/terrainSnapshot";
 import type { SolarAnalysisResult } from "@shared/solarAnalysis";
 import type { TerrainAnalysisResult } from "@shared/terrainAnalysis";
 import { investigationLenses, type InvestigationLens } from "@shared/investigationPlan";
@@ -36,7 +37,8 @@ function terrainClassLabel(classification: TerrainAnalysisResult["slope"]["class
   return { flat: "평탄", gentle: "완경사", moderate: "중경사", steep: "급경사" }[classification];
 }
 
-function TerrainResultCard({ result }: { result: TerrainAnalysisResult }) {
+function TerrainResultCard({ result }: { result: unknown }) {
+  if (!isTerrainAnalysisResult(result)) return <div className="mt-5 border-l-4 border-[#dfb18d] bg-[#fff7ed] p-4 text-sm leading-6 text-[#9a4d22]">이전 지형 분석 기록에 단면 표본이 없어 표시할 수 없습니다. <strong>지형 분석을 다시 실행</strong>하면 최신 형식의 고도·경사·단면 결과로 갱신됩니다.</div>;
   const profileRange = result.section.points.length ? Math.max(...result.section.points.map(point => point.elevationMeters)) - Math.min(...result.section.points.map(point => point.elevationMeters)) : 0;
   return <div className="mt-5 border-t border-[#c9d7c0] pt-5"><div className="grid gap-3 sm:grid-cols-3"><div className="border border-[#c9d7c0] bg-white p-3"><p className="font-mono text-[10px] tracking-[0.12em] text-[#53715f]">ELEVATION RANGE</p><p className="mt-1 font-serif text-2xl text-stone-900">{result.elevation.rangeMeters.toFixed(1)}m</p><p className="mt-1 text-xs text-stone-500">최저 {result.elevation.minimumMeters.toFixed(0)}m · 최고 {result.elevation.maximumMeters.toFixed(0)}m</p></div><div className="border border-[#c9d7c0] bg-white p-3"><p className="font-mono text-[10px] tracking-[0.12em] text-[#53715f]">MEAN SLOPE</p><p className="mt-1 font-serif text-2xl text-stone-900">{result.slope.degrees.toFixed(1)}°</p><p className="mt-1 text-xs text-stone-500">약 {result.slope.percent.toFixed(1)}% · {terrainClassLabel(result.slope.classification)}</p></div><div className="border border-[#c9d7c0] bg-white p-3"><p className="font-mono text-[10px] tracking-[0.12em] text-[#53715f]">DOWNHILL</p><p className="mt-1 font-serif text-2xl text-stone-900">{result.slope.downhillDirection}향</p><p className="mt-1 text-xs text-stone-500">장축 단면 변화 {profileRange.toFixed(1)}m</p></div></div><div className="mt-4 border-l-4 border-[#53715f] bg-[#edf2e5] p-4 text-sm leading-6 text-[#465c3a]"><strong className="text-[#2d4a35]">설계 확인 질문:</strong> {result.slope.downhillDirection}향으로 낮아지는 경사를 전제로, 진입 레벨을 어디에 두고 외부공간의 빗물·보행 흐름을 어떻게 완충할지 검토하세요. 단면선은 지도에 표시되며, 옹벽·계단·배수구·주변 도로의 실제 레벨은 현장에서 대조해야 합니다.</div><p className="mt-3 text-xs leading-5 text-stone-500">출처: {result.source.provider} · {result.source.dataset} · 약 {result.source.resolutionMeters}m 해상도 · 표본 {result.sampleCount}점. DEM 고도는 현황측량·인허가용 레벨을 대체하지 않습니다.</p></div>;
 }

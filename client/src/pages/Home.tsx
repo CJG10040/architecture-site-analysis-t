@@ -11,6 +11,7 @@ import { startLogin } from "@/const";
 import { getMappableFieldPhotos } from "@/lib/fieldPhotoMap";
 import { summarizeBuildingSurveys } from "@/lib/buildingSurvey";
 import { getProjectSelectionAction } from "@/lib/projectSelection";
+import { parseTerrainAnalysisSnapshot } from "@/lib/terrainSnapshot";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { createBoundaryGeoJson, getBoundaryMetrics, parseBoundaryGeoJson, type BoundaryMetrics } from "@/lib/siteBoundary";
@@ -125,8 +126,7 @@ export default function Home() {
   const latestTerrain = useMemo<TerrainAnalysisResult | null>(() => {
     const snapshot = projectBundle.data?.snapshots.find(item => item.category === "terrain" && item.status === "success");
     if (!snapshot?.normalizedPayload) return null;
-    try { return JSON.parse(snapshot.normalizedPayload) as TerrainAnalysisResult; }
-    catch { return null; }
+    return parseTerrainAnalysisSnapshot(snapshot.normalizedPayload);
   }, [projectBundle.data?.snapshots]);
   const latestSolar = useMemo<SolarAnalysisResult | null>(() => {
     const snapshot = projectBundle.data?.snapshots.find(item => item.category === "solar" && item.status === "success");
@@ -179,7 +179,7 @@ export default function Home() {
   useEffect(() => {
     if (!mapIsReady || !mapRef.current || !window.google) return;
     terrainSectionLineRef.current?.setMap(null);
-    const path = latestTerrain?.section.points.map(point => ({ lat: point.latitude, lng: point.longitude })) ?? [];
+    const path = latestTerrain?.section?.points?.map(point => ({ lat: point.latitude, lng: point.longitude })) ?? [];
     if (path.length < 2) { terrainSectionLineRef.current = null; return; }
     const line = new google.maps.Polyline({ map: mapRef.current, path, strokeColor: "#6d5a9e", strokeOpacity: 0.95, strokeWeight: 3, clickable: false, zIndex: 7, icons: [{ icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 4 }, offset: "0", repeat: "12px" }] });
     terrainSectionLineRef.current = line;
