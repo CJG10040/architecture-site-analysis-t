@@ -12,6 +12,7 @@ import { getProjectSelectionAction } from "@/lib/projectSelection";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { createBoundaryGeoJson, getBoundaryMetrics, parseBoundaryGeoJson, type BoundaryMetrics } from "@/lib/siteBoundary";
+import type { TerrainAnalysisResult } from "@shared/terrainAnalysis";
 import { AlertTriangle, ArrowUpRight, BookOpenText, Building2, ChevronRight, CircleDot, ClipboardPlus, FileDown, Gauge, ImagePlus, Layers3, Loader2, LocateFixed, MapPin, Menu, MousePointer2, Network, ParkingCircle, PenTool, Plus, Route, Ruler, Search, Settings, ShieldAlert, Sparkles, Trash2, Trees, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
@@ -65,6 +66,7 @@ export default function Home() {
   const boundaryDraftLineRef = useRef<google.maps.Polyline | null>(null);
   const boundaryDraftMarkersRef = useRef<google.maps.Marker[]>([]);
   const fieldPhotoMarkersRef = useRef<google.maps.Marker[]>([]);
+  const terrainSectionLineRef = useRef<google.maps.Polyline | null>(null);
   const boundaryDrawingListenersRef = useRef<google.maps.MapsEventListener[]>([]);
   const boundaryDraftPointsRef = useRef<google.maps.LatLngLiteral[]>([]);
   const [isBoundaryDrawing, setIsBoundaryDrawing] = useState(false);
@@ -111,6 +113,12 @@ export default function Home() {
     projectBundle.data?.snapshots.forEach(snapshot => { if (!values.has(snapshot.category)) values.set(snapshot.category, snapshot as never); });
     return values;
   }, [projectBundle.data?.snapshots]);
+  const latestTerrain = useMemo<TerrainAnalysisResult | null>(() => {
+    const snapshot = projectBundle.data?.snapshots.find(item => item.category === "terrain" && item.status === "success");
+    if (!snapshot?.normalizedPayload) return null;
+    try { return JSON.parse(snapshot.normalizedPayload) as TerrainAnalysisResult; }
+    catch { return null; }
+  }, [projectBundle.data?.snapshots]);
 
   const persistPolygonPath = (polygon: google.maps.Polygon) => {
     const points = polygon.getPath().getArray().map(point => ({ lat: point.lat(), lng: point.lng() }));
@@ -152,6 +160,16 @@ export default function Home() {
     mapRef.current.fitBounds(bounds, 72);
     return () => { listeners.forEach(listener => listener.remove()); polygon.setMap(null); };
   }, [mapIsReady, siteDraft.boundaryGeoJson]);
+
+  useEffect(() => {
+    if (!mapIsReady || !mapRef.current || !window.google) return;
+    terrainSectionLineRef.current?.setMap(null);
+    const path = latestTerrain?.section.points.map(point => ({ lat: point.latitude, lng: point.longitude })) ?? [];
+    if (path.length < 2) { terrainSectionLineRef.current = null; return; }
+    const line = new google.maps.Polyline({ map: mapRef.current, path, strokeColor: "#6d5a9e", strokeOpacity: 0.95, strokeWeight: 3, clickable: false, zIndex: 7, icons: [{ icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 4 }, offset: "0", repeat: "12px" }] });
+    terrainSectionLineRef.current = line;
+    return () => line.setMap(null);
+  }, [latestTerrain, mapIsReady]);
 
   useEffect(() => {
     if (!mapIsReady || !mapRef.current || !window.google) return;

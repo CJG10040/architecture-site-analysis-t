@@ -4,8 +4,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import type { TerrainAnalysisResult } from "@shared/terrainAnalysis";
 import { investigationLenses, type InvestigationLens } from "@shared/investigationPlan";
-import { Check, ChevronRight, CircleDot, ExternalLink, Layers3, Loader2, MapPin, Ruler, Sparkles } from "lucide-react";
+import { Check, ChevronRight, CircleDot, ExternalLink, Layers3, Loader2, MapPin, Mountain, Ruler, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -30,6 +31,15 @@ function parseStringArray(value: string | null | undefined) {
   catch { return []; }
 }
 
+function terrainClassLabel(classification: TerrainAnalysisResult["slope"]["classification"]) {
+  return { flat: "평탄", gentle: "완경사", moderate: "중경사", steep: "급경사" }[classification];
+}
+
+function TerrainResultCard({ result }: { result: TerrainAnalysisResult }) {
+  const profileRange = result.section.points.length ? Math.max(...result.section.points.map(point => point.elevationMeters)) - Math.min(...result.section.points.map(point => point.elevationMeters)) : 0;
+  return <div className="mt-5 border-t border-[#c9d7c0] pt-5"><div className="grid gap-3 sm:grid-cols-3"><div className="border border-[#c9d7c0] bg-white p-3"><p className="font-mono text-[10px] tracking-[0.12em] text-[#53715f]">ELEVATION RANGE</p><p className="mt-1 font-serif text-2xl text-stone-900">{result.elevation.rangeMeters.toFixed(1)}m</p><p className="mt-1 text-xs text-stone-500">최저 {result.elevation.minimumMeters.toFixed(0)}m · 최고 {result.elevation.maximumMeters.toFixed(0)}m</p></div><div className="border border-[#c9d7c0] bg-white p-3"><p className="font-mono text-[10px] tracking-[0.12em] text-[#53715f]">MEAN SLOPE</p><p className="mt-1 font-serif text-2xl text-stone-900">{result.slope.degrees.toFixed(1)}°</p><p className="mt-1 text-xs text-stone-500">약 {result.slope.percent.toFixed(1)}% · {terrainClassLabel(result.slope.classification)}</p></div><div className="border border-[#c9d7c0] bg-white p-3"><p className="font-mono text-[10px] tracking-[0.12em] text-[#53715f]">DOWNHILL</p><p className="mt-1 font-serif text-2xl text-stone-900">{result.slope.downhillDirection}향</p><p className="mt-1 text-xs text-stone-500">장축 단면 변화 {profileRange.toFixed(1)}m</p></div></div><div className="mt-4 border-l-4 border-[#53715f] bg-[#edf2e5] p-4 text-sm leading-6 text-[#465c3a]"><strong className="text-[#2d4a35]">설계 확인 질문:</strong> {result.slope.downhillDirection}향으로 낮아지는 경사를 전제로, 진입 레벨을 어디에 두고 외부공간의 빗물·보행 흐름을 어떻게 완충할지 검토하세요. 단면선은 지도에 표시되며, 옹벽·계단·배수구·주변 도로의 실제 레벨은 현장에서 대조해야 합니다.</div><p className="mt-3 text-xs leading-5 text-stone-500">출처: {result.source.provider} · {result.source.dataset} · 약 {result.source.resolutionMeters}m 해상도 · 표본 {result.sampleCount}점. DEM 고도는 현황측량·인허가용 레벨을 대체하지 않습니다.</p></div>;
+}
+
 export function InvestigationFlow({ projectId, site, parcel, plan, onStartProject, onParcelConfirmed, onPlanSaved }: { projectId: number | null; site: SiteContext; parcel: StoredParcel; plan: StoredPlan; onStartProject: () => void; onParcelConfirmed: (boundaryGeoJson?: string) => void; onPlanSaved: () => void }) {
   const [lenses, setLenses] = useState<InvestigationLens[]>(["parcel_regulation"]);
   const [approvedIds, setApprovedIds] = useState<string[]>([]);
@@ -37,6 +47,7 @@ export function InvestigationFlow({ projectId, site, parcel, plan, onStartProjec
   const [manualPnu, setManualPnu] = useState("");
   const candidates = trpc.parcels.candidates.useMutation();
   const confirmParcel = trpc.parcels.confirm.useMutation({ onSuccess: result => { onParcelConfirmed(result.boundaryGeoJson); toast.success("조사 대상 범위를 저장했습니다. 이제 조사 관점과 수집 데이터를 선택하세요."); } });
+  const terrain = trpc.terrain.analyze.useMutation({ onSuccess: result => { if (result.status === "success") { onPlanSaved(); toast.success("대지 경계의 고도·경사·단면 표본을 조사 이력에 기록했습니다."); } else toast.error(result.error.message); }, onError: error => toast.error(error.message) });
   const parcelContext = trpc.parcels.context.useQuery({ projectId: projectId ?? 0, radiusMeters: 80 }, { enabled: Boolean(projectId && parcel) });
   const preview = trpc.investigation.preview.useQuery({ projectId: projectId ?? 0, lenses }, { enabled: Boolean(projectId && lenses.length) });
   const savePlan = trpc.investigation.savePlan.useMutation({ onSuccess: () => { onPlanSaved(); toast.success("조사 계획을 저장했습니다. 선택한 데이터를 수집할 준비가 되었습니다."); } });
@@ -60,6 +71,7 @@ export function InvestigationFlow({ projectId, site, parcel, plan, onStartProjec
   if (!projectId) return <div className="mx-auto max-w-5xl px-5 py-8"><p className="font-mono text-[10px] tracking-[0.18em] text-[#8b4a38]">SITE INVESTIGATION AGENT</p><h1 className="mt-1 font-serif text-3xl text-stone-900">대지조사를 시작할 프로젝트가 필요합니다</h1><p className="mt-3 max-w-2xl leading-7 text-stone-600">프로젝트를 만들면 현재 지도 위치와 대지 경계를 연결하고, 조사 관점과 필요한 데이터를 순서대로 제안합니다.</p><Button onClick={onStartProject} className="mt-6 bg-[#2d332d] text-white hover:bg-[#485145]"><Layers3 className="mr-2 h-4 w-4" />새 대지조사 시작</Button></div>;
 
   return <div className="mx-auto max-w-5xl px-5 py-8">
+    <section className="mb-6 border border-[#a9c19b] bg-[#f4f8ef] p-5 shadow-[4px_4px_0_rgba(83,113,95,0.10)]"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div className="flex items-start gap-3"><Mountain className="mt-1 h-5 w-5 text-[#53715f]" /><div><p className="font-mono text-[10px] tracking-[0.14em] text-[#53715f]">TERRAIN · SLOPE · SECTION</p><h2 className="mt-1 font-serif text-2xl text-stone-900">대지 고도·경사·단면 읽기</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-stone-600">확정 경계의 외곽·내부 표본과 대지 장축의 11점 단면을 공개 DEM에서 읽습니다. 경계가 없으면 먼저 지도에서 정확 대지 경계를 저장하세요.</p></div></div><Button type="button" onClick={() => terrain.mutate({ projectId })} disabled={!site.boundaryGeoJson || terrain.isPending} className="shrink-0 bg-[#53715f] text-white hover:bg-[#456150]">{terrain.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mountain className="mr-2 h-4 w-4" />}{terrain.isPending ? "지형 표본 분석 중" : "경계의 지형 분석 실행"}</Button></div>{!site.boundaryGeoJson && <p className="mt-4 border-l-4 border-[#c8ad99] bg-[#fff9f0] p-3 text-sm text-[#8b4a38]">먼저 종합분석 작업대에서 <strong>정확 대지 경계 그리기</strong> 후 <strong>대지 저장</strong>을 눌러 주세요.</p>}{terrain.data?.status === "success" && <TerrainResultCard result={terrain.data.result} />}{terrain.data?.status === "unavailable" && <p className="mt-4 border border-[#dfb18d] bg-[#fff7ed] p-3 text-sm text-[#9a4d22]">{terrain.data.error.message}</p>}</section>
     <div className="flex flex-col gap-4 border-b border-stone-300 pb-6 md:flex-row md:items-end md:justify-between"><div><p className="font-mono text-[10px] tracking-[0.18em] text-[#8b4a38]">GUIDED SITE INVESTIGATION</p><h1 className="mt-1 font-serif text-3xl text-stone-900">대지에서 설계 질문까지</h1><p className="mt-3 max-w-2xl leading-7 text-stone-600">주소와 직접 그린 대지 경계를 먼저 확정하고, 조사할 관점을 선택한 뒤 필요한 공공데이터만 승인하여 수집합니다. 반경은 필지를 대신하지 않고 주변 맥락을 읽는 보조 범위입니다.</p></div><Badge className="w-fit border-0 bg-[#e9efdf] text-[#465c3a]">사용자 승인 후 API 수집</Badge></div>
 
     <section className="mt-7 border border-stone-300 bg-[#fbfaf7] p-5 shadow-[4px_4px_0_rgba(120,100,75,0.10)]">

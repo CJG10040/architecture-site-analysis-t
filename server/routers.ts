@@ -11,6 +11,7 @@ import * as db from "./db";
 import { encryptSecret, maskSecret } from "./lib/credentialCrypto";
 import { ExternalDataError, fetchAirQuality, fetchAirStations, fetchCityParks, fetchCommerceInRadius, fetchGwangjuArrivals, fetchGwangjuStations, fetchLandUse, fetchSgisCensusSummary, fetchVworldParcelCandidates, fetchWelfareFacilities, validateProviderCredential } from "./lib/dataAdapters";
 import { generateSiteReport } from "./lib/reportGenerator";
+import { fetchTerrainAnalysis, TerrainAnalysisError } from "./lib/terrainAnalysis";
 import { credentialGroupIds } from "../shared/integrations";
 import { investigationLenses, recommendContextScopes, recommendInvestigationDatasets } from "../shared/investigationPlan";
 import { normalizeBoundaryGeoJson } from "./lib/boundaryGeoJson";
@@ -125,6 +126,25 @@ export const appRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "대지 경계를 처리하지 못했습니다." });
       }
       return { id: await db.saveSite({ ...input, boundaryGeoJson, latitude: String(input.latitude), longitude: String(input.longitude) }) };
+    }),
+  }),
+  terrain: router({
+    analyze: protectedProcedure.input(z.object({ projectId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin");
+      const [site, parcel] = await Promise.all([db.getSiteForProject(input.projectId), db.getSiteParcel(input.projectId)]);
+      const boundaryGeoJson = parcel?.boundaryGeoJson ?? site?.boundaryGeoJson;
+      if (!boundaryGeoJson) throw new TRPCError({ code: "BAD_REQUEST", message: "지형 분석을 시작하려면 먼저 정확 대지 경계를 그려 저장하세요." });
+      try {
+        const result = await fetchTerrainAnalysis(boundaryGeoJson);
+        const snapshotId = await db.createSnapshot({ projectId: input.projectId, siteId: site?.id, category: "terrain", sourceName: "Open-Meteo 고도 표본 · Copernicus DEM GLO-90", sourceUrl: result.source.sourceUrl, rawPayload: JSON.stringify(result).slice(0, 500_000), normalizedPayload: JSON.stringify(result), spatialScope: "확정 대지 경계 및 장축 단면", dataUnit: "고도 m · 경사 °/%", reliability: "low", limitations: result.limitations.join(" "), status: "success" });
+        await db.recordApiAudit({ provider: "openMeteo", operation: "terrain_analysis", success: true, responseStatus: 200, initiatedBy: ctx.user.id });
+        return { status: "success" as const, snapshotId, result };
+      } catch (error) {
+        const message = error instanceof TerrainAnalysisError ? error.message : "지형 고도 분석을 처리하지 못했습니다. 잠시 후 다시 시도하세요.";
+        await db.createSnapshot({ projectId: input.projectId, siteId: site?.id, category: "terrain", sourceName: "Open-Meteo 고도 표본", spatialScope: "확정 대지 경계", limitations: message, status: "unavailable" });
+        await db.recordApiAudit({ provider: "openMeteo", operation: "terrain_analysis", success: false, safeMessage: message, initiatedBy: ctx.user.id });
+        return { status: "unavailable" as const, error: { message } };
+      }
     }),
   }),
   parcels: router({
