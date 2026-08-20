@@ -191,6 +191,17 @@ export async function listObservations(projectId: number) {
   return db.select().from(schema.fieldObservations).where(eq(schema.fieldObservations.projectId, projectId)).orderBy(desc(schema.fieldObservations.createdAt));
 }
 
+export async function createBuildingSurvey(input: { projectId: number; label: string; floorCount?: number; estimatedHeightMeters?: number; direction?: string; distanceMeters?: number; relationship: "adjacent" | "across_street" | "nearby" | "landmark" | "other"; useOrCondition?: string; notes?: string; verificationStatus: "unverified" | "estimated" | "confirmed" }) {
+  const db = await requireDb();
+  const result = await db.insert(schema.buildingSurveys).values(input);
+  return Number(result[0]?.insertId);
+}
+
+export async function listBuildingSurveys(projectId: number) {
+  const db = await requireDb();
+  return db.select().from(schema.buildingSurveys).where(eq(schema.buildingSurveys.projectId, projectId)).orderBy(desc(schema.buildingSurveys.updatedAt));
+}
+
 export async function createFieldAttachment(input: { projectId: number; observationId?: number; attachmentType: "photo" | "sketch" | "drawing" | "document" | "audio" | "other"; fileKey: string; fileUrl: string; originalName: string; mimeType: string; byteSize: number; latitude?: string; longitude?: string; observedAt?: Date; direction?: string; transcription?: string }) {
   const db = await requireDb();
   const result = await db.insert(schema.fieldAttachments).values(input);
@@ -370,9 +381,10 @@ export async function getProjectBundle(projectId: number) {
   const investigationPlan = await getInvestigationPlan(projectId);
   const snapshots = await listSnapshots(projectId);
   const observations = await listObservations(projectId);
+  const buildingSurveys = await listBuildingSurveys(projectId);
   const attachments = await listFieldAttachments(projectId);
   const relationships = await listRelationshipCards(projectId);
   const cards = await listDesignCards(projectId);
   const reports = await listAiReports(projectId);
-  return { project, site, parcel, investigationPlan, snapshots, observations, attachments, relationships, cards, reports };
+  return { project, site, parcel, investigationPlan, snapshots, observations, buildingSurveys, attachments, relationships, cards, reports };
 }

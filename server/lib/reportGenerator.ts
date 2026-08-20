@@ -19,7 +19,7 @@ const reportSchema = {
   },
 };
 
-export async function generateSiteReport(input: { project: unknown; site: unknown; parcel?: unknown; investigationPlan?: unknown; snapshots: unknown[]; observations: unknown[]; attachments?: unknown[]; relationships?: unknown[] }) {
+export async function generateSiteReport(input: { project: unknown; site: unknown; parcel?: unknown; investigationPlan?: unknown; snapshots: unknown[]; observations: unknown[]; buildingSurveys?: unknown[]; attachments?: unknown[]; relationships?: unknown[] }) {
   const { data: models } = await listLLMModels();
   const model = models.find(item => item.id.startsWith("gpt-5-mini"))?.id ?? models.find(item => item.id.startsWith("gpt-5"))?.id;
   const conciseInput = JSON.stringify({
@@ -29,6 +29,7 @@ export async function generateSiteReport(input: { project: unknown; site: unknow
     approvedInvestigationPlan: input.investigationPlan ?? null,
     snapshots: input.snapshots.slice(0, 12),
     observations: input.observations.slice(0, 20),
+    surroundingBuildingSurveys: input.buildingSurveys?.slice(0, 30) ?? [],
     fieldMaterials: input.attachments?.slice(0, 20) ?? [],
     userRelationships: input.relationships?.slice(0, 20) ?? [],
   }).slice(0, 50_000);

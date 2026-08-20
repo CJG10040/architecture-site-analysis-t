@@ -293,6 +293,13 @@ export const appRouter = router({
       return { id: await db.createObservation({ ...input, latitude: input.latitude?.toString(), longitude: input.longitude?.toString() }) };
     }),
   }),
+  buildings: router({
+    list: protectedProcedure.input(z.object({ projectId: z.number().int().positive() })).query(async ({ ctx, input }) => { await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin"); return db.listBuildingSurveys(input.projectId); }),
+    create: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), label: z.string().min(1).max(160), floorCount: z.number().int().min(1).max(200).optional(), estimatedHeightMeters: z.number().int().min(1).max(1500).optional(), direction: z.string().max(32).optional(), distanceMeters: z.number().int().min(0).max(10_000).optional(), relationship: z.enum(["adjacent", "across_street", "nearby", "landmark", "other"]), useOrCondition: z.string().max(160).optional(), notes: z.string().max(5000).optional(), verificationStatus: z.enum(["unverified", "estimated", "confirmed"]) })).mutation(async ({ ctx, input }) => {
+      await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin");
+      return { id: await db.createBuildingSurvey(input) };
+    }),
+  }),
   materials: router({
     list: protectedProcedure.input(z.object({ projectId: z.number().int().positive() })).query(async ({ ctx, input }) => { await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin"); return db.listFieldAttachments(input.projectId); }),
     upload: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), observationId: z.number().int().positive().optional(), attachmentType: z.enum(attachmentTypes), originalName: z.string().min(1).max(255), mimeType: z.string().min(3).max(120), byteSize: z.number().int().positive().max(MAX_FIELD_MATERIAL_BYTES), dataUrl: z.string().min(20).max(23_000_000), latitude: z.number().min(-90).max(90).optional(), longitude: z.number().min(-180).max(180).optional(), observedAt: z.coerce.date().optional(), direction: z.string().max(32).optional(), transcribe: z.boolean().default(false) })).mutation(async ({ ctx, input }) => {

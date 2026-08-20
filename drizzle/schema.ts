@@ -107,6 +107,22 @@ export const fieldObservations = mysqlTable("fieldObservations", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+export const buildingSurveys = mysqlTable("buildingSurveys", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  label: varchar("label", { length: 160 }).notNull(),
+  floorCount: int("floorCount"),
+  estimatedHeightMeters: int("estimatedHeightMeters"),
+  direction: varchar("direction", { length: 32 }),
+  distanceMeters: int("distanceMeters"),
+  relationship: mysqlEnum("buildingSurveyRelationship", ["adjacent", "across_street", "nearby", "landmark", "other"]).default("nearby").notNull(),
+  useOrCondition: varchar("useOrCondition", { length: 160 }),
+  notes: text("notes"),
+  verificationStatus: mysqlEnum("buildingSurveyVerification", ["unverified", "estimated", "confirmed"]).default("unverified").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export const fieldAttachments = mysqlTable("fieldAttachments", {
   id: int("id").autoincrement().primaryKey(),
   projectId: int("projectId").notNull(),
