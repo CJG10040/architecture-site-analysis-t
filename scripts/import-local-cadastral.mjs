@@ -9,6 +9,7 @@ const inputs = process.argv.slice(2);
 if (!inputs.length) throw new Error("사용법: node scripts/import-local-cadastral.mjs <zip> [...zip]");
 
 const districtNames = { "12210": "동구", "12240": "서구", "12270": "남구", "12300": "북구", "12330": "광산구" };
+const BATCH_SIZE = 1_000;
 const connection = await mysql.createConnection(process.env.DATABASE_URL);
 
 function coordinateExtent(geometry) {
@@ -50,7 +51,7 @@ try {
     for (const feature of validFeatures) {
       const [minLongitude, minLatitude, maxLongitude, maxLatitude] = coordinateExtent(feature.geometry);
       batch.push({ pnu: String(feature.properties.PNU), jibun: String(feature.properties.JIBUN ?? "") || null, landIndicator: String(feature.properties.BCHK ?? "") || null, localAdminCode: districtCode, minLongitude, minLatitude, maxLongitude, maxLatitude, geometryGzipBase64: gzipSync(Buffer.from(JSON.stringify(feature.geometry))).toString("base64") });
-      if (batch.length === 100) { await insertBatch(importId, batch.splice(0)); }
+      if (batch.length === BATCH_SIZE) { await insertBatch(importId, batch.splice(0)); }
     }
     await insertBatch(importId, batch);
     await connection.execute("UPDATE cadastralImports SET cadastralImportStatus='active', featureCount=? WHERE id=?", [features.length, importId]);

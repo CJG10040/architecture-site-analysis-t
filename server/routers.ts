@@ -18,6 +18,7 @@ import { investigationLenses, recommendContextScopes, recommendInvestigationData
 import { normalizeBoundaryGeoJson } from "./lib/boundaryGeoJson";
 import { summarizeEvidence } from "./lib/evidenceSummary";
 import { findLocalCadastralContext } from "./lib/localCadastral";
+import { buildCadastralStorageKey } from "./lib/cadastralStorageKey";
 import { storageGetSignedUrl, storagePut } from "./storage";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { decodeFieldMaterialPayload, isAllowedFieldMaterialMimeType, MAX_FIELD_MATERIAL_BYTES, sanitizeFieldMaterialName } from "./lib/fieldMaterials";
@@ -30,6 +31,7 @@ const relationshipTypes = ["adjacency", "access", "density", "time", "conflict",
 const reviewStatuses = ["undecided", "agree", "partial", "different", "not_important", "research", "counter", "develop"] as const;
 const cadastralDistrictNames: Record<string, string> = { "12210": "동구", "12240": "서구", "12270": "남구", "12300": "북구", "12330": "광산구" };
 const MAX_CADASTRAL_ARCHIVE_BYTES = 35 * 1024 * 1024;
+const CADASTRAL_INSERT_BATCH_SIZE = 1_000;
 
 type CadastralGeometry = { type: "Polygon" | "MultiPolygon"; coordinates: unknown };
 type CadastralFeature = { properties?: Record<string, unknown>; geometry?: CadastralGeometry };
@@ -508,10 +510,10 @@ export const appRouter = router({
         let importId: number | undefined;
         try {
           const parsed = await parseCadastralArchive(input);
-          const safeName = input.originalName.replace(/[^0-9A-Za-z가-힣._-]/g, "-");
-          const stored = await storagePut(`admin/cadastral/${parsed.districtCode}/${parsed.datasetReference}/${Date.now()}-${safeName}`, parsed.buffer, "application/zip");
+          const storageKey = buildCadastralStorageKey({ districtCode: parsed.districtCode, datasetReference: parsed.datasetReference, timestamp: Date.now() });
+          const stored = await storagePut(storageKey, parsed.buffer, "application/zip");
           importId = await db.beginCadastralImport({ districtCode: parsed.districtCode, districtName: parsed.districtName, datasetReference: parsed.datasetReference, sourceFileName: input.originalName, sourceFileKey: stored.key, sourceFileUrl: stored.url, sha256: createHash("sha256").update(parsed.buffer).digest("hex"), featureCount: parsed.rows.length, coordinateReference: "WGS84 경위도 (SHP PRJ 변환)", importedBy: ctx.user.id });
-          for (let start = 0; start < parsed.rows.length; start += 100) await db.insertCadastralParcelBatch(importId, parsed.rows.slice(start, start + 100));
+          for (let start = 0; start < parsed.rows.length; start += CADASTRAL_INSERT_BATCH_SIZE) await db.insertCadastralParcelBatch(importId, parsed.rows.slice(start, start + CADASTRAL_INSERT_BATCH_SIZE));
           await db.completeCadastralImport(importId, parsed.rows.length);
           await db.recordApiAudit({ provider: "localCadastral", operation: "cadastral_upload", success: true, responseStatus: 201, safeMessage: `${parsed.districtName} ${parsed.datasetReference} 연속지적도 ${parsed.rows.length.toLocaleString("ko-KR")}필지를 적재했습니다.`, initiatedBy: ctx.user.id });
           return { success: true as const, districtName: parsed.districtName, datasetReference: parsed.datasetReference, featureCount: parsed.rows.length };
