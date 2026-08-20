@@ -12,6 +12,7 @@ import { getProjectSelectionAction } from "@/lib/projectSelection";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { createBoundaryGeoJson, getBoundaryMetrics, parseBoundaryGeoJson, type BoundaryMetrics } from "@/lib/siteBoundary";
+import type { SolarAnalysisResult } from "@shared/solarAnalysis";
 import type { TerrainAnalysisResult } from "@shared/terrainAnalysis";
 import { AlertTriangle, ArrowUpRight, BookOpenText, Building2, ChevronRight, CircleDot, ClipboardPlus, FileDown, Gauge, ImagePlus, Layers3, Loader2, LocateFixed, MapPin, Menu, MousePointer2, Network, ParkingCircle, PenTool, Plus, Route, Ruler, Search, Settings, ShieldAlert, Sparkles, Trash2, Trees, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -67,6 +68,7 @@ export default function Home() {
   const boundaryDraftMarkersRef = useRef<google.maps.Marker[]>([]);
   const fieldPhotoMarkersRef = useRef<google.maps.Marker[]>([]);
   const terrainSectionLineRef = useRef<google.maps.Polyline | null>(null);
+  const solarShadowLineRef = useRef<google.maps.Polyline | null>(null);
   const boundaryDrawingListenersRef = useRef<google.maps.MapsEventListener[]>([]);
   const boundaryDraftPointsRef = useRef<google.maps.LatLngLiteral[]>([]);
   const [isBoundaryDrawing, setIsBoundaryDrawing] = useState(false);
@@ -117,6 +119,12 @@ export default function Home() {
     const snapshot = projectBundle.data?.snapshots.find(item => item.category === "terrain" && item.status === "success");
     if (!snapshot?.normalizedPayload) return null;
     try { return JSON.parse(snapshot.normalizedPayload) as TerrainAnalysisResult; }
+    catch { return null; }
+  }, [projectBundle.data?.snapshots]);
+  const latestSolar = useMemo<SolarAnalysisResult | null>(() => {
+    const snapshot = projectBundle.data?.snapshots.find(item => item.category === "solar" && item.status === "success");
+    if (!snapshot?.normalizedPayload) return null;
+    try { return JSON.parse(snapshot.normalizedPayload) as SolarAnalysisResult; }
     catch { return null; }
   }, [projectBundle.data?.snapshots]);
 
@@ -170,6 +178,20 @@ export default function Home() {
     terrainSectionLineRef.current = line;
     return () => line.setMap(null);
   }, [latestTerrain, mapIsReady]);
+
+  useEffect(() => {
+    if (!mapIsReady || !mapRef.current || !window.google) return;
+    solarShadowLineRef.current?.setMap(null);
+    const reference = latestSolar?.moments.find(item => item.season === "winter_solstice" && item.localTime === "12:00" && item.isAboveHorizon);
+    if (!reference || !latestSolar) { solarShadowLineRef.current = null; return; }
+    const distanceMeters = 130;
+    const bearingRadians = reference.shadowBearingDegrees * Math.PI / 180;
+    const origin = { lat: latestSolar.location.latitude, lng: latestSolar.location.longitude };
+    const destination = { lat: origin.lat + distanceMeters * Math.cos(bearingRadians) / 111_320, lng: origin.lng + distanceMeters * Math.sin(bearingRadians) / (111_320 * Math.cos(origin.lat * Math.PI / 180)) };
+    const line = new google.maps.Polyline({ map: mapRef.current, path: [origin, destination], strokeColor: "#b58b2a", strokeOpacity: 0.95, strokeWeight: 3, clickable: false, zIndex: 8, icons: [{ icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 4 }, offset: "0", repeat: "10px" }] });
+    solarShadowLineRef.current = line;
+    return () => line.setMap(null);
+  }, [latestSolar, mapIsReady]);
 
   useEffect(() => {
     if (!mapIsReady || !mapRef.current || !window.google) return;

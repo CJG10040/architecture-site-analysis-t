@@ -169,7 +169,7 @@ export async function getInvestigationPlan(projectId: number) {
   return (await db.select().from(schema.investigationPlans).where(eq(schema.investigationPlans.projectId, projectId)).limit(1))[0];
 }
 
-export async function createSnapshot(input: { projectId: number; siteId?: number; category: "parcel" | "regulation" | "environment" | "transport" | "parking" | "facility" | "commerce" | "park" | "demographics" | "terrain" | "building" | "culture" | "manual"; sourceName: string; sourceUrl?: string; rawPayload?: string; normalizedPayload?: string; spatialScope?: string; dataUnit?: string; reliability?: "high" | "medium" | "low" | "unknown"; limitations?: string; status: "success" | "empty" | "unavailable" | "error" }) {
+export async function createSnapshot(input: { projectId: number; siteId?: number; category: "parcel" | "regulation" | "environment" | "transport" | "parking" | "facility" | "commerce" | "park" | "demographics" | "terrain" | "solar" | "building" | "culture" | "manual"; sourceName: string; sourceUrl?: string; rawPayload?: string; normalizedPayload?: string; spatialScope?: string; dataUnit?: string; reliability?: "high" | "medium" | "low" | "unknown"; limitations?: string; status: "success" | "empty" | "unavailable" | "error" }) {
   const db = await requireDb();
   const result = await db.insert(schema.analysisSnapshots).values(input);
   return Number(result[0]?.insertId);

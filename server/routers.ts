@@ -11,6 +11,7 @@ import * as db from "./db";
 import { encryptSecret, maskSecret } from "./lib/credentialCrypto";
 import { ExternalDataError, fetchAirQuality, fetchAirStations, fetchCityParks, fetchCommerceInRadius, fetchGwangjuArrivals, fetchGwangjuStations, fetchLandUse, fetchSgisCensusSummary, fetchVworldParcelCandidates, fetchWelfareFacilities, validateProviderCredential } from "./lib/dataAdapters";
 import { generateSiteReport } from "./lib/reportGenerator";
+import { analyzeSolarAccess, SolarAnalysisError } from "./lib/solarAnalysis";
 import { fetchTerrainAnalysis, TerrainAnalysisError } from "./lib/terrainAnalysis";
 import { credentialGroupIds } from "../shared/integrations";
 import { investigationLenses, recommendContextScopes, recommendInvestigationDatasets } from "../shared/investigationPlan";
@@ -143,6 +144,25 @@ export const appRouter = router({
         const message = error instanceof TerrainAnalysisError ? error.message : "지형 고도 분석을 처리하지 못했습니다. 잠시 후 다시 시도하세요.";
         await db.createSnapshot({ projectId: input.projectId, siteId: site?.id, category: "terrain", sourceName: "Open-Meteo 고도 표본", spatialScope: "확정 대지 경계", limitations: message, status: "unavailable" });
         await db.recordApiAudit({ provider: "openMeteo", operation: "terrain_analysis", success: false, safeMessage: message, initiatedBy: ctx.user.id });
+        return { status: "unavailable" as const, error: { message } };
+      }
+    }),
+  }),
+  solar: router({
+    analyze: protectedProcedure.input(z.object({ projectId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin");
+      const [site, parcel] = await Promise.all([db.getSiteForProject(input.projectId), db.getSiteParcel(input.projectId)]);
+      const boundaryGeoJson = parcel?.boundaryGeoJson ?? site?.boundaryGeoJson;
+      if (!site || !boundaryGeoJson) throw new TRPCError({ code: "BAD_REQUEST", message: "일조 분석을 시작하려면 먼저 정확 대지 경계를 그려 저장하세요." });
+      try {
+        const result = analyzeSolarAccess({ latitude: Number(site.latitude), longitude: Number(site.longitude) });
+        const snapshotId = await db.createSnapshot({ projectId: input.projectId, siteId: site.id, category: "solar", sourceName: "NOAA 태양 위치 근사 · 대표 계절 비교", sourceUrl: result.source.sourceUrl, rawPayload: JSON.stringify(result), normalizedPayload: JSON.stringify(result), spatialScope: "확정 대지 중심 및 경계", dataUnit: "태양 방위각·고도각 ° · 그림자 방향", reliability: "medium", limitations: result.limitations.join(" "), status: "success" });
+        await db.recordApiAudit({ provider: "solarGeometry", operation: "solar_analysis", success: true, responseStatus: 200, initiatedBy: ctx.user.id });
+        return { status: "success" as const, snapshotId, result };
+      } catch (error) {
+        const message = error instanceof SolarAnalysisError ? error.message : "일조·일영 분석을 처리하지 못했습니다. 잠시 후 다시 시도하세요.";
+        await db.createSnapshot({ projectId: input.projectId, siteId: site.id, category: "solar", sourceName: "NOAA 태양 위치 근사", spatialScope: "확정 대지 중심", limitations: message, status: "unavailable" });
+        await db.recordApiAudit({ provider: "solarGeometry", operation: "solar_analysis", success: false, safeMessage: message, initiatedBy: ctx.user.id });
         return { status: "unavailable" as const, error: { message } };
       }
     }),

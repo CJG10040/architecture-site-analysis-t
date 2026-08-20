@@ -78,7 +78,7 @@ export const analysisSnapshots = mysqlTable("analysisSnapshots", {
   id: int("id").autoincrement().primaryKey(),
   projectId: int("projectId").notNull(),
   siteId: int("siteId"),
-  category: mysqlEnum("analysisCategory", ["parcel", "regulation", "environment", "transport", "parking", "facility", "commerce", "park", "demographics", "terrain", "building", "culture", "manual"]).notNull(),
+  category: mysqlEnum("analysisCategory", ["parcel", "regulation", "environment", "transport", "parking", "facility", "commerce", "park", "demographics", "terrain", "solar", "building", "culture", "manual"]).notNull(),
   sourceName: varchar("sourceName", { length: 160 }).notNull(),
   sourceUrl: text("sourceUrl"),
   rawPayload: text("rawPayload"),
