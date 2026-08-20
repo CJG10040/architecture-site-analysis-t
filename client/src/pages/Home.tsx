@@ -11,6 +11,7 @@ import { startLogin } from "@/const";
 import { getMappableFieldPhotos } from "@/lib/fieldPhotoMap";
 import { summarizeBuildingSurveys } from "@/lib/buildingSurvey";
 import { getProjectSelectionAction } from "@/lib/projectSelection";
+import { parseSolarAnalysisSnapshot } from "@/lib/solarSnapshot";
 import { parseTerrainAnalysisSnapshot } from "@/lib/terrainSnapshot";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -133,8 +134,7 @@ export default function Home() {
   const latestSolar = useMemo<SolarAnalysisResult | null>(() => {
     const snapshot = projectSnapshots.find(item => item.category === "solar" && item.status === "success");
     if (!snapshot?.normalizedPayload) return null;
-    try { return JSON.parse(snapshot.normalizedPayload) as SolarAnalysisResult; }
-    catch { return null; }
+    return parseSolarAnalysisSnapshot(snapshot.normalizedPayload);
   }, [projectSnapshots]);
 
   const persistPolygonPath = (polygon: google.maps.Polygon) => {
@@ -191,7 +191,8 @@ export default function Home() {
   useEffect(() => {
     if (!mapIsReady || !mapRef.current || !window.google) return;
     solarShadowLineRef.current?.setMap(null);
-    const reference = latestSolar?.moments.find(item => item.season === "winter_solstice" && item.localTime === "12:00" && item.isAboveHorizon);
+    const solarMoments = Array.isArray(latestSolar?.moments) ? latestSolar.moments : [];
+    const reference = solarMoments.find(item => item.season === "winter_solstice" && item.localTime === "12:00" && item.isAboveHorizon);
     if (!reference || !latestSolar) { solarShadowLineRef.current = null; return; }
     const distanceMeters = 130;
     const bearingRadians = reference.shadowBearingDegrees * Math.PI / 180;
@@ -206,7 +207,7 @@ export default function Home() {
     if (!mapIsReady || !mapRef.current || !window.google) return;
     fieldPhotoMarkersRef.current.forEach(marker => marker.setMap(null));
     const photos = getMappableFieldPhotos(projectAttachments);
-    const markers = photos.map((photo, index) => {
+    const markers = (Array.isArray(photos) ? photos : []).map((photo, index) => {
       const position = { lat: photo.latitude, lng: photo.longitude };
       const marker = new google.maps.Marker({ map: mapRef.current, position, title: `현장 사진 ${index + 1}: ${photo.originalName}`, zIndex: 8, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: "#53715f", fillOpacity: 1, strokeColor: "#fffaf2", strokeOpacity: 1, strokeWeight: 2 } });
       const info = new google.maps.InfoWindow();
@@ -232,7 +233,7 @@ export default function Home() {
       return { id: photo.id, marker, position };
     });
     fieldPhotoMarkersRef.current = markers.map(item => item.marker);
-    const focused = markers.find(item => item.id === focusedAttachmentId);
+    const focused = Array.isArray(markers) ? markers.find(item => item.id === focusedAttachmentId) : undefined;
     if (focused) {
       mapRef.current.setCenter(focused.position);
       mapRef.current.setZoom(Math.max(mapRef.current.getZoom() ?? 16, 18));
