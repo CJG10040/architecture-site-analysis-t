@@ -60,6 +60,8 @@ export default function Home() {
   const projectsQuery = trpc.projects.list.useQuery(undefined, { enabled: isAuthenticated });
   const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
   const projectBundle = trpc.projects.get.useQuery({ projectId: activeProjectId ?? 0 }, { enabled: Boolean(activeProjectId) });
+  const projectSnapshots = Array.isArray(projectBundle.data?.snapshots) ? projectBundle.data.snapshots : [];
+  const projectAttachments = Array.isArray(projectBundle.data?.attachments) ? projectBundle.data.attachments : [];
   const [panel, setPanel] = useState<Panel>("workspace");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
@@ -120,20 +122,20 @@ export default function Home() {
 
   const snapshotByCategory = useMemo(() => {
     const values = new Map<string, (typeof projectBundle.data extends infer T ? T : never)>();
-    projectBundle.data?.snapshots.forEach(snapshot => { if (!values.has(snapshot.category)) values.set(snapshot.category, snapshot as never); });
+    projectSnapshots.forEach(snapshot => { if (!values.has(snapshot.category)) values.set(snapshot.category, snapshot as never); });
     return values;
-  }, [projectBundle.data?.snapshots]);
+  }, [projectSnapshots]);
   const latestTerrain = useMemo<TerrainAnalysisResult | null>(() => {
-    const snapshot = projectBundle.data?.snapshots.find(item => item.category === "terrain" && item.status === "success");
+    const snapshot = projectSnapshots.find(item => item.category === "terrain" && item.status === "success");
     if (!snapshot?.normalizedPayload) return null;
     return parseTerrainAnalysisSnapshot(snapshot.normalizedPayload);
-  }, [projectBundle.data?.snapshots]);
+  }, [projectSnapshots]);
   const latestSolar = useMemo<SolarAnalysisResult | null>(() => {
-    const snapshot = projectBundle.data?.snapshots.find(item => item.category === "solar" && item.status === "success");
+    const snapshot = projectSnapshots.find(item => item.category === "solar" && item.status === "success");
     if (!snapshot?.normalizedPayload) return null;
     try { return JSON.parse(snapshot.normalizedPayload) as SolarAnalysisResult; }
     catch { return null; }
-  }, [projectBundle.data?.snapshots]);
+  }, [projectSnapshots]);
 
   const persistPolygonPath = (polygon: google.maps.Polygon) => {
     const points = polygon.getPath().getArray().map(point => ({ lat: point.lat(), lng: point.lng() }));
@@ -203,7 +205,7 @@ export default function Home() {
   useEffect(() => {
     if (!mapIsReady || !mapRef.current || !window.google) return;
     fieldPhotoMarkersRef.current.forEach(marker => marker.setMap(null));
-    const photos = getMappableFieldPhotos(projectBundle.data?.attachments ?? []);
+    const photos = getMappableFieldPhotos(projectAttachments);
     const markers = photos.map((photo, index) => {
       const position = { lat: photo.latitude, lng: photo.longitude };
       const marker = new google.maps.Marker({ map: mapRef.current, position, title: `현장 사진 ${index + 1}: ${photo.originalName}`, zIndex: 8, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: "#53715f", fillOpacity: 1, strokeColor: "#fffaf2", strokeOpacity: 1, strokeWeight: 2 } });
@@ -237,7 +239,7 @@ export default function Home() {
       google.maps.event.trigger(focused.marker, "click");
     }
     return () => markers.forEach(item => item.marker.setMap(null));
-  }, [focusedAttachmentId, mapIsReady, projectBundle.data?.attachments]);
+  }, [focusedAttachmentId, mapIsReady, projectAttachments]);
 
   const cleanupBoundaryDrawing = () => {
     boundaryDrawingListenersRef.current.forEach(listener => listener.remove());

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { getMappableFieldPhotos } from "./fieldPhotoMap";
+import { getMappableFieldPhotos, type FieldPhotoMapSource } from "./fieldPhotoMap";
 
 describe("getMappableFieldPhotos", () => {
+  it("returns an empty collection when attachments have not arrived yet", () => {
+    expect(getMappableFieldPhotos<FieldPhotoMapSource>(undefined)).toEqual([]);
+  });
+
   it("이미지형 현장 사진 중 유효한 좌표가 있는 항목만 지도 마커 후보로 반환한다", () => {
     const photos = getMappableFieldPhotos([
       { id: 1, attachmentType: "photo", mimeType: "image/jpeg", latitude: "35.1467", longitude: "126.9210" },

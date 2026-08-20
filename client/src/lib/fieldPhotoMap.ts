@@ -1,6 +1,7 @@
 export type FieldPhotoMapSource = { id: number; attachmentType: string; mimeType: string; latitude: string | null; longitude: string | null };
 
-export function getMappableFieldPhotos<T extends FieldPhotoMapSource>(attachments: T[]) {
+export function getMappableFieldPhotos<T extends FieldPhotoMapSource>(attachments: readonly T[] | null | undefined) {
+  if (!Array.isArray(attachments)) return [];
   return attachments.flatMap(item => {
     if (item.latitude === null || item.longitude === null || !item.latitude.trim() || !item.longitude.trim()) return [];
     const latitude = Number(item.latitude);
