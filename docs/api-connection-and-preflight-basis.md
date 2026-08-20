@@ -15,3 +15,5 @@
 
 - [VWorld](https://www.vworld.kr/)는 국가공간정보 조회·활용 서비스이나, 이번 점검 시 502 응답이 확인됐다.
 - [한국환경공단 에어코리아 측정소별 실시간 측정정보 서비스](https://www.data.go.kr/data/15156659/openapi.do?recommendDataYn=Y)는 공공데이터포털에서 제공되는 측정소 기반 대기질 서비스다.
+- 사용자가 제공한 [SGIS 데이터 API 기본 안내](https://sgis.mods.go.kr/developer/html/newOpenApi/api/dataApi/basics.html)는 인증 요청을 `https://sgisapi.mods.go.kr/OpenAPI3/auth/authentication.json`으로 안내한다. [SGIS 센서스 통계 안내](https://sgis.mods.go.kr/developer/html/newOpenApi/api/dataApi/census.html)는 인구 통계 요청을 `https://sgisapi.mods.go.kr/OpenAPI3/stats/population.json`으로 안내하며, `accessToken`, `year`, 선택 `adm_cd`, 선택 `low_search`를 사용한다. 따라서 구현은 현재 공식 `sgisapi.mods.go.kr` 도메인과 5자리 시·군·구 센서스 코드를 기준으로 유지한다.
+- 사용자가 제공한 **생활안전정보 OpenAPI 활용가이드 Ver1.7**은 주제도 호출 서버를 `http://www.safemap.go.kr/openApiService/wms/getLayerData.do?apikey=[APIKEY]`로, 방범등 레이어를 `A2SM_CMMNPOI_SECULIGHT`, 스타일을 `A2SM_CMMNPOI_07`로 안내한다. 구현을 이 계약으로 전환해 실제 키를 확인한 결과 HTTP 200이지만 이미지 대신 서비스 500 HTML을 반환했다. 따라서 현재 키는 safeData·방범등 레이어에 대한 서비스 권한 또는 서버 측 이용 상태를 추가 확인해야 하며, 작업대는 이를 수집 성공으로 표시하지 않는다.

@@ -9,7 +9,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { encryptSecret, maskSecret } from "./lib/credentialCrypto";
-import { ExternalDataError, fetchAirQuality, fetchAirStations, fetchCityParks, fetchCommerceInRadius, fetchGwangjuArrivals, fetchGwangjuStations, fetchLandUse, fetchSgisCensusSummary, fetchVworldParcelCandidates, fetchWelfareFacilities, validateProviderCredential } from "./lib/dataAdapters";
+import { ExternalDataError, fetchAirQuality, fetchAirQualityNearAddress, fetchAirStations, fetchCityParks, fetchCommerceInRadius, fetchGwangjuArrivals, fetchGwangjuStations, fetchLandUse, fetchSgisCensusSummary, fetchVworldParcelCandidates, fetchWelfareFacilities, validateProviderCredential } from "./lib/dataAdapters";
 import { generateSiteReport } from "./lib/reportGenerator";
 import { analyzeSolarAccess, SolarAnalysisError } from "./lib/solarAnalysis";
 import { buildTerrainFallbackBoundary, fetchTerrainAnalysis, TerrainAnalysisError } from "./lib/terrainAnalysis";
@@ -78,6 +78,8 @@ async function ensureProjectAccess(projectId: number, userId: number, isAdmin = 
 
 function safeExternalError(error: unknown) {
   if (error instanceof ExternalDataError) return { code: error.code, message: error.message, status: error.status };
+  if (error instanceof TerrainAnalysisError) return { code: "UNAVAILABLE" as const, message: error.message };
+  if (error instanceof SolarAnalysisError) return { code: "UNAVAILABLE" as const, message: error.message };
   return { code: "UNAVAILABLE", message: "외부 데이터 처리 중 오류가 발생했습니다." };
 }
 
@@ -91,13 +93,20 @@ function districtFromAddress(address?: string | null) {
 }
 
 function firstStationName(data: unknown) {
-  const source = data && typeof data === "object" ? data as Record<string, unknown> : {};
-  const response = source.response && typeof source.response === "object" ? source.response as Record<string, unknown> : source;
-  const body = response.body && typeof response.body === "object" ? response.body as Record<string, unknown> : response;
-  const items = body.items && typeof body.items === "object" ? body.items as Record<string, unknown> : body;
-  const raw = items.item ?? items.items;
-  const first = Array.isArray(raw) ? raw[0] : raw;
-  return first && typeof first === "object" ? String((first as Record<string, unknown>).stationName ?? "") || undefined : undefined;
+  const find = (value: unknown): string | undefined => {
+    if (Array.isArray(value)) return value.map(find).find(Boolean);
+    if (!value || typeof value !== "object") return undefined;
+    const record = value as Record<string, unknown>;
+    if (typeof record.stationName === "string" && record.stationName.trim()) return record.stationName.trim();
+    return Object.values(record).map(find).find(Boolean);
+  };
+  return find(data);
+}
+
+function snapshotPayload(value: unknown) {
+  const serialized = JSON.stringify(value);
+  if (Buffer.byteLength(serialized, "utf8") <= 58_000) return serialized;
+  return JSON.stringify({ truncated: true, originalBytes: Buffer.byteLength(serialized, "utf8"), preview: serialized.slice(0, 12_000), note: "원본 응답이 DB 텍스트 한도를 넘어 표본만 보관했습니다. 정규화 요약과 수집 시각·출처는 전체로 저장됩니다." });
 }
 
 type PreflightResult = { id: string; label: string; status: "collected" | "unavailable" | "fieldwork"; message: string };
@@ -108,7 +117,7 @@ async function runPublicDataPreflight(input: { projectId: number; userId: number
   const results: PreflightResult[] = [];
   const save = async (id: string, label: string, category: "parcel" | "environment" | "transport" | "parking" | "facility" | "commerce" | "park" | "demographics" | "terrain" | "solar", upstream: { data: unknown; sourceUrl: string }, spatialScope: string, limitations: string, dataUnit: string, reliability: "low" | "medium" | "high" = "medium") => {
     const summary = summarizeEvidence(upstream.data, label, spatialScope);
-    await db.createSnapshot({ projectId: input.projectId, siteId: site.id, category, sourceName: label, sourceUrl: upstream.sourceUrl, rawPayload: JSON.stringify(upstream.data).slice(0, 500_000), normalizedPayload: JSON.stringify(summary), spatialScope, dataUnit, reliability, limitations, status: "success" });
+    await db.createSnapshot({ projectId: input.projectId, siteId: site.id, category, sourceName: label, sourceUrl: upstream.sourceUrl, rawPayload: snapshotPayload(upstream.data), normalizedPayload: snapshotPayload(summary), spatialScope, dataUnit, reliability, limitations, status: "success" });
     results.push({ id, label, status: "collected", message: `${label}를 수집해 조사 이력에 저장했습니다.` });
   };
   const attempt = async (id: string, label: string, work: () => Promise<void>) => {
@@ -149,11 +158,9 @@ async function runPublicDataPreflight(input: { projectId: number; userId: number
     await save("welfare-facilities", "한국사회보장정보원 사회복지시설", "facility", upstream, `${district} 생활권 후보`, "원천 시설 주소·좌표 품질과 실제 이용 가능 여부만 현장에서 대조합니다.", "시설 목록");
   });
   await attempt("air-quality", "인근 대기질", async () => {
-    const stations = await fetchAirStations(site.address ?? "");
-    const stationName = firstStationName(stations.data);
-    if (!stationName) throw new ExternalDataError("UNAVAILABLE", "주소에서 인근 대기질 측정소를 찾지 못했습니다.");
-    const upstream = await fetchAirQuality(stationName);
-    await save("air-quality", "에어코리아 인근 측정소 대기질", "environment", upstream, `인근 측정소 ${stationName}`, "대지 직접 측정값이 아닌 측정소 관측값이며 관측 시각·거리만 현장에서 필요 시 대조합니다.", "측정소 관측 농도", "high");
+    const upstream = await fetchAirQualityNearAddress(site.address ?? "");
+    const scope = upstream.selectionMethod === "address_station_list" ? `주소 기반 인근 측정소 ${upstream.stationName}` : `광주 대체 후보 측정소 ${upstream.stationName}`;
+    await save("air-quality", "에어코리아 인근 측정소 대기질", "environment", upstream, scope, "대지 직접 측정값이 아닌 측정소 관측값입니다. 광주 대체 후보일 때는 관측소 위치·거리만 현장에서 필요 시 대조합니다.", "측정소 관측 농도", "high");
   });
   if (parcel) await attempt("parcel-context", "확정·로컬 대체 필지", async () => {
     await save("parcel-context", "확정 필지·연속지적도 근거", "parcel", { data: parcel, sourceUrl: parcel.sourceUrl ?? "https://www.vworld.kr/" }, "확정 필지", "VWorld 원천 장애 시에는 광주 로컬 연속지적도 대체 데이터일 수 있으며, 측량·인허가 증명은 아닙니다.", "필지 도형·PNU·지목·면적");

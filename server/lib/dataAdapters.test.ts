@@ -65,10 +65,17 @@ describe("provider credential health checks", () => {
     await fetchSafeMapSecurityLights();
 
     const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(requestUrl.protocol).toBe("http:");
     expect(requestUrl.hostname).toBe("www.safemap.go.kr");
-    expect(requestUrl.pathname).toBe("/openapi2/IF_0102_WMS");
-    expect(requestUrl.searchParams.get("layers")).toBe("A2SM_CMMNPOI_SECULIGHT");
-    expect(requestUrl.searchParams.get("serviceKey")).toBe("test-service-key");
+    expect(requestUrl.pathname).toBe("/openApiService/wms/getLayerData.do");
+    expect(requestUrl.searchParams.get("layername")).toBe("A2SM_CMMNPOI_SECULIGHT");
+    expect(requestUrl.searchParams.get("styles")).toBe("A2SM_CMMNPOI_07");
+    expect(requestUrl.searchParams.get("apikey")).toBe("test-service-key");
+  });
+
+  it("treats a 200 HTML error page from SafeMap as a layer-approval failure, not a successful map response", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>생활안전지도 500 error</html>", { status: 200, headers: { "content-type": "text/html; charset=utf-8" } })));
+    await expect(fetchSafeMapSecurityLights()).rejects.toMatchObject({ code: "UPSTREAM_ERROR", status: 200 });
   });
 
   it("uses the ORS authorization header for a lightweight walking route", async () => {
@@ -118,15 +125,16 @@ describe("SGIS census summary", () => {
     const householdUrl = new URL(String(fetchMock.mock.calls[2]?.[0]));
     const companyUrl = new URL(String(fetchMock.mock.calls[3]?.[0]));
     expect(authUrl.pathname).toBe("/OpenAPI3/auth/authentication.json");
+    expect(authUrl.hostname).toBe("sgisapi.mods.go.kr");
     expect(authUrl.searchParams.get("consumer_key")).toBe("test-service-key");
     expect(authUrl.searchParams.get("consumer_secret")).toBe("test-consumer-secret");
     expect(populationUrl.pathname).toBe("/OpenAPI3/stats/population.json");
     expect(populationUrl.searchParams.get("adm_cd")).toBe("24010");
-    expect(populationUrl.searchParams.get("year")).toBe("2020");
-    expect(householdUrl.searchParams.get("year")).toBe("2020");
-    expect(companyUrl.searchParams.get("year")).toBe("2019");
+    expect(populationUrl.searchParams.get("year")).toBe("2024");
+    expect(householdUrl.searchParams.get("year")).toBe("2024");
+    expect(companyUrl.searchParams.get("year")).toBe("2024");
     expect(result.data.population).toEqual([{ tot_ppltn: "100" }]);
-    expect(result.data.baseYears).toMatchObject({ population: "2020", household: "2020", company: "2019" });
+    expect(result.data.baseYears).toMatchObject({ population: "2024", household: "2024", company: "2024" });
   });
 
   it("keeps available population and company data when one statistical section is unavailable", async () => {

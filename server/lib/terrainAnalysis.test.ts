@@ -29,6 +29,15 @@ describe("지형 고도·경사·단면 분석", () => {
     expect(buildTerrainSamplingPlan(JSON.stringify(fallback)).surfaceLocations.length).toBeGreaterThanOrEqual(12);
   });
 
+  it("긴 그린 경계는 공개 DEM 다중 좌표 제한을 넘지 않도록 대표 정점만 균등 표본으로 사용한다", () => {
+    const ring = Array.from({ length: 81 }, (_, index) => [126.92 + Math.cos(index / 80 * Math.PI * 2) * 0.002, 35.14 + Math.sin(index / 80 * Math.PI * 2) * 0.001]);
+    ring.push(ring[0]);
+    const longBoundary = JSON.stringify({ type: "Feature", geometry: { type: "Polygon", coordinates: [ring] } });
+    const plan = buildTerrainSamplingPlan(longBoundary);
+    expect(plan.surfaceLocations).toHaveLength(29);
+    expect(plan.surfaceLocations.length + plan.crossSectionLocations.length).toBeLessThan(100);
+  });
+
   it("공개 DEM 응답의 다중 표본을 고도·단면 결과로 정규화한다", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: URL) => {
       const sampleCount = url.searchParams.get("latitude")?.split(",").length ?? 0;

@@ -6,6 +6,7 @@ type TerrainSamplingPlan = { surfaceLocations: TerrainCoordinate[]; crossSection
 const OPEN_METEO_ELEVATION_URL = "https://api.open-meteo.com/v1/elevation";
 const metersPerDegreeLatitude = 111_132;
 const radians = (value: number) => (value * Math.PI) / 180;
+const MAX_BOUNDARY_ELEVATION_SAMPLES = 20;
 
 export class TerrainAnalysisError extends Error {}
 
@@ -40,6 +41,11 @@ function boundsOf(points: BoundaryPoint[]) {
   return points.reduce((bounds, point) => ({ minLatitude: Math.min(bounds.minLatitude, point.latitude), maxLatitude: Math.max(bounds.maxLatitude, point.latitude), minLongitude: Math.min(bounds.minLongitude, point.longitude), maxLongitude: Math.max(bounds.maxLongitude, point.longitude) }), { minLatitude: points[0].latitude, maxLatitude: points[0].latitude, minLongitude: points[0].longitude, maxLongitude: points[0].longitude });
 }
 
+function evenlySampleBoundary(points: BoundaryPoint[], maximum = MAX_BOUNDARY_ELEVATION_SAMPLES) {
+  if (points.length <= maximum) return points;
+  return Array.from({ length: maximum }, (_, index) => points[Math.round(index * (points.length - 1) / (maximum - 1))]);
+}
+
 export function buildTerrainSamplingPlan(boundaryGeoJson: string): TerrainSamplingPlan {
   const boundary = parseBoundary(boundaryGeoJson);
   const bounds = boundsOf(boundary);
@@ -53,7 +59,7 @@ export function buildTerrainSamplingPlan(boundaryGeoJson: string): TerrainSampli
     const fraction = index / 10;
     return axis === "east_west" ? { latitude: center.latitude, longitude: bounds.minLongitude + (bounds.maxLongitude - bounds.minLongitude) * fraction } : { latitude: bounds.minLatitude + (bounds.maxLatitude - bounds.minLatitude) * fraction, longitude: center.longitude };
   });
-  return { surfaceLocations: [...boundary, ...grid], crossSectionLocations, axis, label: axis === "east_west" ? "대지 장축 단면 · 동서" : "대지 장축 단면 · 남북", center };
+  return { surfaceLocations: [...evenlySampleBoundary(boundary), ...grid], crossSectionLocations, axis, label: axis === "east_west" ? "대지 장축 단면 · 동서" : "대지 장축 단면 · 남북", center };
 }
 
 function compassLabel(bearingDegrees: number) {

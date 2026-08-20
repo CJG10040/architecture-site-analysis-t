@@ -8,6 +8,12 @@ describe("deriveSgisSggCodeFromPnu", () => {
     expect(deriveSgisSggCodeFromPnu("4111010100100010000")).toBe("31010");
   });
 
+  it("converts the 2026 integrated Gwangju cadastral PNU prefixes without arithmetic guessing", () => {
+    expect(deriveSgisSggCodeFromPnu("1221011300101130000")).toBe("24010");
+    expect(deriveSgisSggCodeFromPnu("1224010100100010000")).toBe("24020");
+    expect(deriveSgisSggCodeFromPnu("1233010100100010000")).toBe("24050");
+  });
+
   it("does not guess when a complete legal PNU is unavailable", () => {
     expect(deriveSgisSggCodeFromPnu("29110")).toBeUndefined();
     expect(deriveSgisSggCodeFromPnu("not-a-pnu")).toBeUndefined();

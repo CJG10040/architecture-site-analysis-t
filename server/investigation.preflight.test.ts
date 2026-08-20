@@ -18,6 +18,7 @@ vi.mock("./lib/dataAdapters", () => ({
   ExternalDataError: class ExternalDataError extends Error { constructor(public code: string, message: string, public status?: number) { super(message); } },
   fetchAirStations: vi.fn(async () => ({ data: { response: { body: { items: { item: { stationName: "서석동" } } } } }, sourceUrl: "https://example.test/stations", status: 200 })),
   fetchAirQuality: vi.fn(async () => ({ data: { response: { body: { items: [] } } }, sourceUrl: "https://example.test/air", status: 200 })),
+  fetchAirQualityNearAddress: vi.fn(async () => ({ data: { response: { body: { items: [{ stationName: "서석동" }] } } }, sourceUrl: "https://example.test/air", status: 200, stationName: "서석동", selectionMethod: "address_station_list" })),
   fetchCityParks: vi.fn(async () => ({ data: { response: { body: { items: [] } } }, sourceUrl: "https://example.test/parks", status: 200 })),
   fetchCommerceInRadius: vi.fn(async () => ({ data: { response: { body: { items: [] } } }, sourceUrl: "https://example.test/commerce", status: 200 })),
   fetchGwangjuArrivals: vi.fn(),
