@@ -306,7 +306,7 @@ export async function validateProviderCredential(provider: Provider) {
   switch (provider) {
     case "dataGoKr": return fetchAirStations("광주광역시");
     case "sgis": return fetchSgisCensusSummary({ pnu: "2911010800100010000" });
-    case "vworld": return fetchVworldParcelCandidates({ latitude: 35.1467, longitude: 126.921 });
+    case "vworld": return vworldDataRequest({ geomFilter: "POINT(126.921 35.1467)", size: 1 });
     case "safeMap": return fetchSafeMapSecurityLights();
     case "openRouteService": return fetchOpenRouteWalkingRoute({ fromLongitude: 126.921, fromLatitude: 35.1467, toLongitude: 126.922, toLatitude: 35.1477 });
   }

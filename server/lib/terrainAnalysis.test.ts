@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { analyzeTerrainPlan, buildTerrainSamplingPlan, fetchTerrainAnalysis } from "./terrainAnalysis";
+import { analyzeTerrainPlan, buildTerrainFallbackBoundary, buildTerrainSamplingPlan, fetchTerrainAnalysis } from "./terrainAnalysis";
 
 const boundary = JSON.stringify({ type: "Feature", geometry: { type: "Polygon", coordinates: [[[126.92, 35.14], [126.922, 35.14], [126.922, 35.141], [126.92, 35.141], [126.92, 35.14]]] } });
 
@@ -20,6 +20,13 @@ describe("지형 고도·경사·단면 분석", () => {
 
   it("유효한 폴리곤이 없으면 조사 경계 저장을 요청한다", () => {
     expect(() => buildTerrainSamplingPlan("{}")) .toThrow("대지 경계");
+  });
+
+  it("필지 확정 전 대지 중심점에서 150m × 150m 임시 분석 범위를 만든다", () => {
+    const fallback = JSON.parse(buildTerrainFallbackBoundary({ latitude: 35.1467, longitude: 126.921 })) as { geometry: { coordinates: number[][][] }; properties: { analysisExtent: string; halfSpanMeters: number } };
+    expect(fallback.properties).toEqual({ analysisExtent: "site_center_fallback", halfSpanMeters: 75 });
+    expect(fallback.geometry.coordinates[0]).toHaveLength(5);
+    expect(buildTerrainSamplingPlan(JSON.stringify(fallback)).surfaceLocations.length).toBeGreaterThanOrEqual(12);
   });
 
   it("공개 DEM 응답의 다중 표본을 고도·단면 결과로 정규화한다", async () => {

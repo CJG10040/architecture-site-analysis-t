@@ -12,7 +12,7 @@ import { encryptSecret, maskSecret } from "./lib/credentialCrypto";
 import { ExternalDataError, fetchAirQuality, fetchAirStations, fetchCityParks, fetchCommerceInRadius, fetchGwangjuArrivals, fetchGwangjuStations, fetchLandUse, fetchSgisCensusSummary, fetchVworldParcelCandidates, fetchWelfareFacilities, validateProviderCredential } from "./lib/dataAdapters";
 import { generateSiteReport } from "./lib/reportGenerator";
 import { analyzeSolarAccess, SolarAnalysisError } from "./lib/solarAnalysis";
-import { fetchTerrainAnalysis, TerrainAnalysisError } from "./lib/terrainAnalysis";
+import { buildTerrainFallbackBoundary, fetchTerrainAnalysis, TerrainAnalysisError } from "./lib/terrainAnalysis";
 import { credentialGroupIds } from "../shared/integrations";
 import { investigationLenses, recommendContextScopes, recommendInvestigationDatasets } from "../shared/investigationPlan";
 import { normalizeBoundaryGeoJson } from "./lib/boundaryGeoJson";
@@ -100,6 +100,79 @@ function firstStationName(data: unknown) {
   return first && typeof first === "object" ? String((first as Record<string, unknown>).stationName ?? "") || undefined : undefined;
 }
 
+type PreflightResult = { id: string; label: string; status: "collected" | "unavailable" | "fieldwork"; message: string };
+
+async function runPublicDataPreflight(input: { projectId: number; userId: number }) {
+  const [site, parcel] = await Promise.all([db.getSiteForProject(input.projectId), db.getSiteParcel(input.projectId)]);
+  if (!site) throw new TRPCError({ code: "BAD_REQUEST", message: "사전 자동조사 전에 대지 위치를 저장하세요." });
+  const results: PreflightResult[] = [];
+  const save = async (id: string, label: string, category: "parcel" | "environment" | "transport" | "parking" | "facility" | "commerce" | "park" | "demographics" | "terrain" | "solar", upstream: { data: unknown; sourceUrl: string }, spatialScope: string, limitations: string, dataUnit: string, reliability: "low" | "medium" | "high" = "medium") => {
+    const summary = summarizeEvidence(upstream.data, label, spatialScope);
+    await db.createSnapshot({ projectId: input.projectId, siteId: site.id, category, sourceName: label, sourceUrl: upstream.sourceUrl, rawPayload: JSON.stringify(upstream.data).slice(0, 500_000), normalizedPayload: JSON.stringify(summary), spatialScope, dataUnit, reliability, limitations, status: "success" });
+    results.push({ id, label, status: "collected", message: `${label}를 수집해 조사 이력에 저장했습니다.` });
+  };
+  const attempt = async (id: string, label: string, work: () => Promise<void>) => {
+    try { await work(); }
+    catch (error) { const failure = safeExternalError(error); results.push({ id, label, status: "unavailable", message: failure.message }); }
+  };
+  const boundary = parcel?.boundaryGeoJson ?? site.boundaryGeoJson ?? buildTerrainFallbackBoundary({ latitude: Number(site.latitude), longitude: Number(site.longitude) });
+  const spatialScope = parcel?.boundaryGeoJson || site.boundaryGeoJson ? "그린 대지 경계 및 주변 맥락" : "대지 중심 150m × 150m 사전 표본 범위";
+
+  await attempt("terrain", "고도·경사·단면", async () => {
+    const terrain = await fetchTerrainAnalysis(boundary);
+    await save("terrain", "Open-Meteo 고도 표본 · Copernicus DEM GLO-90", "terrain", { data: terrain, sourceUrl: terrain.source.sourceUrl }, spatialScope, "공개 DEM의 약 90m 표본이며 미세 레벨차·옹벽·계단은 현장에서 확인해야 합니다.", "고도 m · 경사 °/%", "low");
+  });
+  await attempt("solar", "대표일 일조·일영", async () => {
+    const solar = analyzeSolarAccess({ latitude: Number(site.latitude), longitude: Number(site.longitude) });
+    await save("solar", "NOAA 태양 위치 근사 · 대표 계절 비교", "solar", { data: solar, sourceUrl: solar.source.sourceUrl }, spatialScope, "인접 건물·수목의 실제 차폐와 법정 일조시간은 포함하지 않습니다.", "태양 방위·고도 ° · 그림자 방향", "medium");
+  });
+  await attempt("gw-bus", "광주 버스 정류장", async () => {
+    const upstream = await fetchGwangjuStations();
+    await save("gw-bus", "전남광주통합특별시 광주버스정보", "transport", upstream, `대지 중심 ${Math.min(site.analysisRadiusMeters, 800)}m 사전 맥락`, "정류장 목록이며 실제 보행 접근성과 시간대별 승하차는 현장에서 필요한 경우에만 확인합니다.", "정류장 레코드");
+  });
+  await attempt("parking-context", "주차장 맥락", async () => {
+    const data = await db.nearbyParking(Number(site.latitude), Number(site.longitude), Math.min(site.analysisRadiusMeters, 800));
+    await save("parking-context", "광주교통공사 역 인근 주차장 현황", "parking", { data, sourceUrl: "사용자 제공 광주교통공사 역 인근 주차장 현황 CSV" }, `대지 중심 ${Math.min(site.analysisRadiusMeters, 800)}m`, "2022-12-08 기준 제공 CSV이며 광주 지역에 한정됩니다.", "시설·수용대수");
+  });
+  await attempt("commerce-radius", "상가·상권", async () => {
+    const upstream = await fetchCommerceInRadius(Number(site.latitude), Number(site.longitude), Math.min(site.analysisRadiusMeters, 800));
+    await save("commerce-radius", "소상공인시장진흥공단 상가(상권)정보", "commerce", upstream, `대지 중심 ${Math.min(site.analysisRadiusMeters, 800)}m`, "상가 목록은 영업 상태·시간대·보행 점유를 보장하지 않아 현장에서는 필요한 항목만 대조합니다.", "반경 내 상가업소");
+  });
+  await attempt("parks-open-space", "도시공원·녹지", async () => {
+    const upstream = await fetchCityParks();
+    await save("parks-open-space", "전국도시공원정보표준데이터", "park", upstream, `대지 중심 ${Math.min(site.analysisRadiusMeters, 800)}m 후보`, "원천 좌표·주소 품질에 따라 실제 거리와 접근성만 현장에서 대조합니다.", "도시공원 표준 레코드");
+  });
+  await attempt("welfare-facilities", "사회복지시설", async () => {
+    const district = districtFromAddress(site.address);
+    if (!district) throw new ExternalDataError("BAD_REQUEST", "주소에서 시·군·구를 찾지 못했습니다. 대지 주소를 보완하면 시설 데이터를 자동 수집할 수 있습니다.");
+    const upstream = await fetchWelfareFacilities(district);
+    await save("welfare-facilities", "한국사회보장정보원 사회복지시설", "facility", upstream, `${district} 생활권 후보`, "원천 시설 주소·좌표 품질과 실제 이용 가능 여부만 현장에서 대조합니다.", "시설 목록");
+  });
+  await attempt("air-quality", "인근 대기질", async () => {
+    const stations = await fetchAirStations(site.address ?? "");
+    const stationName = firstStationName(stations.data);
+    if (!stationName) throw new ExternalDataError("UNAVAILABLE", "주소에서 인근 대기질 측정소를 찾지 못했습니다.");
+    const upstream = await fetchAirQuality(stationName);
+    await save("air-quality", "에어코리아 인근 측정소 대기질", "environment", upstream, `인근 측정소 ${stationName}`, "대지 직접 측정값이 아닌 측정소 관측값이며 관측 시각·거리만 현장에서 필요 시 대조합니다.", "측정소 관측 농도", "high");
+  });
+  if (parcel) await attempt("parcel-context", "확정·로컬 대체 필지", async () => {
+    await save("parcel-context", "확정 필지·연속지적도 근거", "parcel", { data: parcel, sourceUrl: parcel.sourceUrl ?? "https://www.vworld.kr/" }, "확정 필지", "VWorld 원천 장애 시에는 광주 로컬 연속지적도 대체 데이터일 수 있으며, 측량·인허가 증명은 아닙니다.", "필지 도형·PNU·지목·면적");
+  });
+  const parcelPnu = parcel?.pnu;
+  if (parcelPnu) await attempt("sgis-demographics", "SGIS 인구·가구·사업체", async () => {
+    const upstream = await fetchSgisCensusSummary({ pnu: parcelPnu });
+    await save("sgis-demographics", "SGIS 인구·가구·사업체", "demographics", upstream, `시·군·구 ${upstream.data.administrativeCode}`, `개별 필지가 아닌 시·군·구 통계이며 기준연도(인구 ${upstream.data.baseYears.population ?? "미확인"}·가구 ${upstream.data.baseYears.household ?? "미확인"}·사업체 ${upstream.data.baseYears.company ?? "미확인"})를 함께 읽어야 합니다.`, "인구·가구·사업체 통계");
+  });
+  else results.push({ id: "sgis-demographics", label: "SGIS 인구·가구·사업체", status: "unavailable", message: "PNU가 아직 없어 시·군·구 통계는 보류했습니다. 필지 확정 뒤 자동조사를 다시 실행하면 수집합니다." });
+
+  results.push({ id: "verify-levels", label: "경계·레벨차 검증", status: "fieldwork", message: "자동 DEM 결과와 실제 옹벽·계단·접도 레벨차가 맞는지만 짧게 확인하세요." });
+  results.push({ id: "verify-activity", label: "운영·보행 흐름 검증", status: "fieldwork", message: "자동 수집한 상권·교통·시설 목록 중 실제 운영·이용·접근이 다른 지점만 확인하세요." });
+  results.push({ id: "verify-shadow", label: "차폐·그늘 검증", status: "fieldwork", message: "자동 일조 방향과 주변 건물·수목의 실제 차폐가 다른 지점만 확인하세요." });
+  await db.createSnapshot({ projectId: input.projectId, siteId: site.id, category: "manual", sourceName: "공공데이터 중심 사전 자동조사 요약", rawPayload: JSON.stringify(results), normalizedPayload: JSON.stringify(results), spatialScope, dataUnit: "수집·보류·현장 검증 상태", reliability: "medium", limitations: "이 요약은 사전 자동조사 결과입니다. 현장에서는 원천 데이터로 확정할 수 없는 레벨차·차폐·운영 상태만 검증합니다.", status: "success" });
+  await db.recordApiAudit({ provider: "preflight", operation: "public_data_preflight", success: results.some(item => item.status === "collected"), responseStatus: 200, safeMessage: `사전 자동조사: ${results.filter(item => item.status === "collected").length}건 수집`, initiatedBy: input.userId });
+  return { results, collectedCount: results.filter(item => item.status === "collected").length, fieldVerificationCount: results.filter(item => item.status === "fieldwork").length };
+}
+
 
 export const appRouter = router({
   system: systemRouter,
@@ -134,15 +207,18 @@ export const appRouter = router({
       await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin");
       const [site, parcel] = await Promise.all([db.getSiteForProject(input.projectId), db.getSiteParcel(input.projectId)]);
       const boundaryGeoJson = parcel?.boundaryGeoJson ?? site?.boundaryGeoJson;
-      if (!boundaryGeoJson) throw new TRPCError({ code: "BAD_REQUEST", message: "지형 분석을 시작하려면 먼저 정확 대지 경계를 그려 저장하세요." });
+      if (!site) throw new TRPCError({ code: "BAD_REQUEST", message: "지형 분석을 시작하려면 먼저 대지 위치를 저장하세요." });
+      const analysisBoundary = boundaryGeoJson ?? buildTerrainFallbackBoundary({ latitude: Number(site.latitude), longitude: Number(site.longitude) });
+      const spatialScope = boundaryGeoJson ? "그린 대지 경계 및 장축 단면" : "대지 중심 150m × 150m 표본 범위 및 장축 단면";
       try {
-        const result = await fetchTerrainAnalysis(boundaryGeoJson);
-        const snapshotId = await db.createSnapshot({ projectId: input.projectId, siteId: site?.id, category: "terrain", sourceName: "Open-Meteo 고도 표본 · Copernicus DEM GLO-90", sourceUrl: result.source.sourceUrl, rawPayload: JSON.stringify(result).slice(0, 500_000), normalizedPayload: JSON.stringify(result), spatialScope: "확정 대지 경계 및 장축 단면", dataUnit: "고도 m · 경사 °/%", reliability: "low", limitations: result.limitations.join(" "), status: "success" });
+        const result = await fetchTerrainAnalysis(analysisBoundary);
+        const limitations = [...result.limitations, ...(boundaryGeoJson ? [] : ["그린 대지 경계 전에는 저장된 중심점을 기준으로 한 150m × 150m 표본 범위입니다. 경계를 저장한 뒤 다시 실행하면 정확한 대지 범위로 갱신됩니다."])];
+        const snapshotId = await db.createSnapshot({ projectId: input.projectId, siteId: site.id, category: "terrain", sourceName: "Open-Meteo 고도 표본 · Copernicus DEM GLO-90", sourceUrl: result.source.sourceUrl, rawPayload: JSON.stringify(result).slice(0, 500_000), normalizedPayload: JSON.stringify({ ...result, limitations }).slice(0, 500_000), spatialScope, dataUnit: "고도 m · 경사 °/%", reliability: "low", limitations: limitations.join(" "), status: "success" });
         await db.recordApiAudit({ provider: "openMeteo", operation: "terrain_analysis", success: true, responseStatus: 200, initiatedBy: ctx.user.id });
         return { status: "success" as const, snapshotId, result };
       } catch (error) {
         const message = error instanceof TerrainAnalysisError ? error.message : "지형 고도 분석을 처리하지 못했습니다. 잠시 후 다시 시도하세요.";
-        await db.createSnapshot({ projectId: input.projectId, siteId: site?.id, category: "terrain", sourceName: "Open-Meteo 고도 표본", spatialScope: "확정 대지 경계", limitations: message, status: "unavailable" });
+        await db.createSnapshot({ projectId: input.projectId, siteId: site.id, category: "terrain", sourceName: "Open-Meteo 고도 표본", spatialScope, limitations: message, status: "unavailable" });
         await db.recordApiAudit({ provider: "openMeteo", operation: "terrain_analysis", success: false, safeMessage: message, initiatedBy: ctx.user.id });
         return { status: "unavailable" as const, error: { message } };
       }
@@ -153,10 +229,10 @@ export const appRouter = router({
       await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin");
       const [site, parcel] = await Promise.all([db.getSiteForProject(input.projectId), db.getSiteParcel(input.projectId)]);
       const boundaryGeoJson = parcel?.boundaryGeoJson ?? site?.boundaryGeoJson;
-      if (!site || !boundaryGeoJson) throw new TRPCError({ code: "BAD_REQUEST", message: "일조 분석을 시작하려면 먼저 정확 대지 경계를 그려 저장하세요." });
+      if (!site) throw new TRPCError({ code: "BAD_REQUEST", message: "일조 분석을 시작하려면 먼저 대지 위치를 저장하세요." });
       try {
         const result = analyzeSolarAccess({ latitude: Number(site.latitude), longitude: Number(site.longitude) });
-        const snapshotId = await db.createSnapshot({ projectId: input.projectId, siteId: site.id, category: "solar", sourceName: "NOAA 태양 위치 근사 · 대표 계절 비교", sourceUrl: result.source.sourceUrl, rawPayload: JSON.stringify(result), normalizedPayload: JSON.stringify(result), spatialScope: "확정 대지 중심 및 경계", dataUnit: "태양 방위각·고도각 ° · 그림자 방향", reliability: "medium", limitations: result.limitations.join(" "), status: "success" });
+        const snapshotId = await db.createSnapshot({ projectId: input.projectId, siteId: site.id, category: "solar", sourceName: "NOAA 태양 위치 근사 · 대표 계절 비교", sourceUrl: result.source.sourceUrl, rawPayload: JSON.stringify(result), normalizedPayload: JSON.stringify(result), spatialScope: boundaryGeoJson ? "그린 대지 중심 및 경계" : "저장된 대지 중심점", dataUnit: "태양 방위각·고도각 ° · 그림자 방향", reliability: "medium", limitations: result.limitations.join(" "), status: "success" });
         await db.recordApiAudit({ provider: "solarGeometry", operation: "solar_analysis", success: true, responseStatus: 200, initiatedBy: ctx.user.id });
         return { status: "success" as const, snapshotId, result };
       } catch (error) {
@@ -284,6 +360,11 @@ export const appRouter = router({
       const collectedCount = results.filter(item => item.status === "collected").length;
       await db.saveInvestigationPlan({ projectId: input.projectId, selectedLenses: plan.selectedLenses, priorityOrder: plan.priorityOrder, recommendedDatasets: plan.recommendedDatasets, approvedDatasetIds: plan.approvedDatasetIds, contextScopes: plan.contextScopes, status: collectedCount === approved.length ? "collected" : "partial" });
       return { results, status: collectedCount === approved.length ? "collected" as const : "partial" as const };
+    }),
+    preflight: protectedProcedure.input(z.object({ projectId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await ensureProjectAccess(input.projectId, ctx.user.id, ctx.user.role === "admin");
+      const result = await runPublicDataPreflight({ projectId: input.projectId, userId: ctx.user.id });
+      return { status: result.collectedCount ? "success" as const : "partial" as const, ...result };
     }),
   }),
   observations: router({

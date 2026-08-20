@@ -9,7 +9,7 @@ vi.mock("./credentialCrypto", () => ({
   decryptSecret: vi.fn(() => JSON.stringify({ primary: "test-service-key", secondary: "test-consumer-secret" })),
 }));
 
-const { fetchCityParks, fetchCommerceInRadius, fetchLandUse, fetchOpenRouteWalkingRoute, fetchSafeMapSecurityLights, fetchSgisCensusSummary, fetchVworldParcelCandidates, normalizeVworldParcelCandidates } = await import("./dataAdapters");
+const { fetchCityParks, fetchCommerceInRadius, fetchLandUse, fetchOpenRouteWalkingRoute, fetchSafeMapSecurityLights, fetchSgisCensusSummary, fetchVworldParcelCandidates, normalizeVworldParcelCandidates, validateProviderCredential } = await import("./dataAdapters");
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -52,6 +52,12 @@ describe("site-context layers", () => {
 });
 
 describe("provider credential health checks", () => {
+  it("VWorld 원천 게이트웨이 검증은 로컬 지적도 대체를 성공으로 처리하지 않는다", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("bad gateway", { status: 502 })));
+
+    await expect(validateProviderCredential("vworld")).rejects.toMatchObject({ code: "UPSTREAM_ERROR", status: 502 });
+  });
+
   it("requests the official SafeMap security-light WMS layer with the encrypted provider key", async () => {
     const fetchMock = vi.fn(async () => new Response("image", { status: 200, headers: { "content-type": "image/png" } }));
     vi.stubGlobal("fetch", fetchMock);

@@ -9,6 +9,20 @@ const radians = (value: number) => (value * Math.PI) / 180;
 
 export class TerrainAnalysisError extends Error {}
 
+export function buildTerrainFallbackBoundary(center: TerrainCoordinate, halfSpanMeters = 75) {
+  if (!Number.isFinite(center.latitude) || !Number.isFinite(center.longitude) || center.latitude < -90 || center.latitude > 90 || center.longitude < -180 || center.longitude > 180) throw new TerrainAnalysisError("대지 중심 좌표가 유효하지 않아 지형 분석 범위를 만들지 못했습니다.");
+  const latitudeDelta = halfSpanMeters / metersPerDegreeLatitude;
+  const longitudeDelta = halfSpanMeters / Math.max(111_320 * Math.cos(radians(center.latitude)), 1);
+  const ring = [
+    [center.longitude - longitudeDelta, center.latitude - latitudeDelta],
+    [center.longitude + longitudeDelta, center.latitude - latitudeDelta],
+    [center.longitude + longitudeDelta, center.latitude + latitudeDelta],
+    [center.longitude - longitudeDelta, center.latitude + latitudeDelta],
+    [center.longitude - longitudeDelta, center.latitude - latitudeDelta],
+  ];
+  return JSON.stringify({ type: "Feature", properties: { analysisExtent: "site_center_fallback", halfSpanMeters }, geometry: { type: "Polygon", coordinates: [ring] } });
+}
+
 function parseBoundary(value: string): BoundaryPoint[] {
   try {
     const parsed = JSON.parse(value) as { type?: string; geometry?: { type?: string; coordinates?: number[][][] }; coordinates?: number[][][] };
