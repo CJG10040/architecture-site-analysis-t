@@ -121,6 +121,23 @@ export async function getProjectForOwner(projectId: number, ownerId: number) {
   return (await db.select().from(schema.projects).where(and(eq(schema.projects.id, projectId), eq(schema.projects.ownerId, ownerId))).limit(1))[0];
 }
 
+/** 프로젝트의 기본 브리프·대지 위치·그린 경계는 남기고 조사 과정에서 생성된 기록만 지운다. */
+export async function resetProjectResearchData(projectId: number) {
+  const db = await requireDb();
+  await db.transaction(async tx => {
+    await tx.delete(schema.fieldAttachments).where(eq(schema.fieldAttachments.projectId, projectId));
+    await tx.delete(schema.fieldObservations).where(eq(schema.fieldObservations.projectId, projectId));
+    await tx.delete(schema.buildingSurveys).where(eq(schema.buildingSurveys.projectId, projectId));
+    await tx.delete(schema.relationshipCards).where(eq(schema.relationshipCards.projectId, projectId));
+    await tx.delete(schema.designCards).where(eq(schema.designCards.projectId, projectId));
+    await tx.delete(schema.aiReports).where(eq(schema.aiReports.projectId, projectId));
+    await tx.delete(schema.analysisSnapshots).where(eq(schema.analysisSnapshots.projectId, projectId));
+    await tx.delete(schema.investigationPlans).where(eq(schema.investigationPlans.projectId, projectId));
+    await tx.delete(schema.siteParcels).where(eq(schema.siteParcels.projectId, projectId));
+    await tx.update(schema.projects).set({ updatedAt: new Date() }).where(eq(schema.projects.id, projectId));
+  });
+}
+
 export async function saveSite(input: { projectId: number; address?: string; parcelNumber?: string; roadAddress?: string; landAreaSqm?: string; latitude: string; longitude: string; analysisRadiusMeters: number; boundaryGeoJson?: string }) {
   const db = await requireDb();
   const existing = (await db.select().from(schema.sites).where(eq(schema.sites.projectId, input.projectId)).limit(1))[0];
