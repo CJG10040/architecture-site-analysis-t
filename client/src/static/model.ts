@@ -1,0 +1,62 @@
+export type LlmProvider = "openai" | "gemini" | "anthropic";
+
+export type BoundaryPoint = { lat: number; lng: number };
+export type SiteRecord = { address: string; latitude: number; longitude: number; boundary: BoundaryPoint[] };
+export type Observation = { id: string; title: string; note: string; category: string; createdAt: string };
+export type ResearchNote = { id: string; source: string; title: string; summary: string; url?: string; createdAt: string };
+export type DesignNote = { id: string; question: string; evidence: string; spatialIdea: string; createdAt: string };
+
+export type LocalProject = {
+  schemaVersion: 1;
+  id: string;
+  title: string;
+  lenses: string[];
+  site: SiteRecord;
+  observations: Observation[];
+  researchNotes: ResearchNote[];
+  designNotes: DesignNote[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PublicServiceSettings = { vworldKey: string; dataGoKrKey: string; sgisKey: string };
+export type StoredWorkspace = { schemaVersion: 1; activeProjectId: string | null; projects: LocalProject[] };
+
+export const workspaceStorageKey = "site-study-static-workspace-v1";
+export const settingsStorageKey = "site-study-static-settings-v1";
+
+const now = () => new Date().toISOString();
+const createId = () => globalThis.crypto?.randomUUID?.() ?? `site-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+export function createLocalProject(title = "새 대지조사"): LocalProject {
+  const timestamp = now();
+  return { schemaVersion: 1, id: createId(), title, lenses: [], site: { address: "", latitude: 35.1467, longitude: 126.921, boundary: [] }, observations: [], researchNotes: [], designNotes: [], createdAt: timestamp, updatedAt: timestamp };
+}
+
+export function createWorkspace(project = createLocalProject()): StoredWorkspace {
+  return { schemaVersion: 1, activeProjectId: project.id, projects: [project] };
+}
+
+function isPoint(value: unknown): value is BoundaryPoint {
+  return typeof value === "object" && value !== null && typeof (value as BoundaryPoint).lat === "number" && typeof (value as BoundaryPoint).lng === "number";
+}
+
+export function normalizeWorkspace(value: unknown): StoredWorkspace | null {
+  if (!value || typeof value !== "object" || (value as { schemaVersion?: unknown }).schemaVersion !== 1 || !Array.isArray((value as StoredWorkspace).projects)) return null;
+  const projects = (value as StoredWorkspace).projects.filter((project): project is LocalProject => Boolean(project && typeof project.id === "string" && typeof project.title === "string" && project.site && Array.isArray(project.site.boundary) && project.site.boundary.every(isPoint))).map(project => ({ ...project, lenses: Array.isArray(project.lenses) ? project.lenses.filter(item => typeof item === "string") : [], observations: Array.isArray(project.observations) ? project.observations : [], researchNotes: Array.isArray(project.researchNotes) ? project.researchNotes : [], designNotes: Array.isArray(project.designNotes) ? project.designNotes : [] }));
+  if (!projects.length) return null;
+  const activeProjectId = projects.some(project => project.id === (value as StoredWorkspace).activeProjectId) ? (value as StoredWorkspace).activeProjectId : projects[0].id;
+  return { schemaVersion: 1, activeProjectId, projects };
+}
+
+export function getActiveProject(workspace: StoredWorkspace) {
+  return workspace.projects.find(project => project.id === workspace.activeProjectId) ?? workspace.projects[0];
+}
+
+export function updateProject(workspace: StoredWorkspace, nextProject: LocalProject): StoredWorkspace {
+  return { ...workspace, projects: workspace.projects.map(project => project.id === nextProject.id ? { ...nextProject, updatedAt: now() } : project) };
+}
+
+export function projectSnapshot(project: LocalProject) {
+  return JSON.stringify({ app: "대지해석 개인용 정적 도구", exportedAt: now(), project }, null, 2);
+}

@@ -1,1 +1,0 @@
-ALTER TABLE `analysisSnapshots` MODIFY COLUMN `analysisCategory` enum('regulation','environment','transport','parking','facility','commerce','park','manual') NOT NULL;
