@@ -78,6 +78,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePersistFn } from "@/hooks/usePersistFn";
+import { getMapInitializationAction } from "@/lib/mapInitialization";
 import { cn } from "@/lib/utils";
 
 declare global {
@@ -89,6 +90,8 @@ declare global {
 
 const MAP_SCRIPT_ID = "manus-google-maps-sdk";
 const MAPS_SDK_ENDPOINT = "/api/maps/sdk.js";
+const MAP_CONTAINER_RETRY_COUNT = 12;
+const MAP_CONTAINER_RETRY_DELAY_MS = 50;
 
 let mapScriptPromise: Promise<void> | null = null;
 
@@ -156,12 +159,20 @@ export function MapView({
   const map = useRef<google.maps.Map | null>(null);
   const [mapState, setMapState] = useState<"loading" | "ready" | "error">("loading");
 
-  const init = usePersistFn(async () => {
+  const init = usePersistFn(async (isActive: () => boolean) => {
     try {
       setMapState("loading");
       await loadMapScript();
-      if (!mapContainer.current || !window.google?.maps) throw new Error("지도 컨테이너를 초기화하지 못했습니다.");
-      map.current = new window.google.maps.Map(mapContainer.current, {
+      let container: HTMLDivElement | null = null;
+      for (let attempt = 0; attempt < MAP_CONTAINER_RETRY_COUNT; attempt += 1) {
+        const action = getMapInitializationAction({ isActive: isActive(), hasContainer: Boolean(mapContainer.current), hasMapsSdk: Boolean(window.google?.maps?.Map) });
+        if (action === "stop") return;
+        if (action === "sdk-unavailable") throw new Error("Google Maps SDK를 초기화하지 못했습니다.");
+        if (action === "initialize") { container = mapContainer.current; break; }
+        await new Promise<void>(resolve => window.setTimeout(resolve, MAP_CONTAINER_RETRY_DELAY_MS));
+      }
+      if (!container || !isActive()) return;
+      map.current = new window.google.maps.Map(container, {
         zoom: initialZoom,
         center: initialCenter,
         mapTypeControl: true,
@@ -170,16 +181,19 @@ export function MapView({
         streetViewControl: true,
         mapId: "DEMO_MAP_ID",
       });
+      if (!isActive()) return;
       setMapState("ready");
       onMapReady?.(map.current);
     } catch (error) {
       console.error("Google Maps unavailable", error);
-      setMapState("error");
+      if (isActive()) setMapState("error");
     }
   });
 
   useEffect(() => {
-    init();
+    let isActive = true;
+    void init(() => isActive);
+    return () => { isActive = false; };
   }, [init]);
 
   return <div className={cn("relative w-full h-[500px] bg-[#ebe7de]", className)}>
