@@ -26,6 +26,10 @@ GitHub Pages에서 동작하는 개인 학습·과제용 정적 브라우저 도
 
 네이버 지도 Web Dynamic Map은 JavaScript SDK로 제공되며, Client ID와 `Dynamic Map` 서비스 선택이 필요합니다. 서비스 선택이 누락되면 할당량 오류가 발생할 수 있습니다. [네이버 지도 API v3 시작 가이드](https://navermaps.github.io/maps.js.ncp/docs/tutorial-2-Getting-Started.html)와 [Client ID 발급 안내](https://navermaps.github.io/maps.js.ncp/docs/tutorial-1-Getting-Client-ID.html)를 함께 확인하세요.
 
+## OpenStreetMap 백업 지도
+
+지도 상단의 **OpenStreetMap 백업**을 선택하면 네이버 지도 Client ID 오류나 표현 차이를 확인할 때도 지도 클릭, 경계 정점 드래그 보정, 조사 반경, 수집 근거 마커를 계속 사용할 수 있습니다. 주소 검색은 공용 Nominatim 서비스의 정책에 맞춰 자동완성이 아닌 **사용자 클릭형 검색**으로만 실행하며, 1초 요청 간격과 현재 세션 캐시를 적용합니다. OpenStreetMap 표준 타일과 Nominatim은 개인용·적정량 사용을 전제로 하며 대량 다운로드, 오프라인 사전 저장, 반복 자동 조회에는 사용할 수 없습니다. [타일 사용 정책](https://operations.osmfoundation.org/policies/tiles/)과 [Nominatim 사용 정책](https://operations.osmfoundation.org/policies/nominatim/)을 확인하세요.
+
 ## 제한
 
 GitHub Pages는 정적 호스팅입니다. 브라우저 직접 호출을 허용하지 않는 API는 CORS 정책에 따라 동작하지 않을 수 있으며, 이 경우 결과를 수동 기록하거나 제공자가 허용하는 도메인·브라우저 API 계약을 확인해야 합니다.

@@ -176,3 +176,11 @@
     }
   }
 }
+
+.site-boundary-vertex {
+  box-sizing: border-box;
+  border: 2px solid #ffffff;
+  border-radius: 9999px;
+  background: #a9684f;
+  box-shadow: 0 1px 4px rgb(30 20 12 / 35%);
+}
