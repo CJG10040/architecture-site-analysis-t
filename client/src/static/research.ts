@@ -11,7 +11,7 @@ export const sourceCatalog: SourceDefinition[] = [
 ];
 
 const id = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-const note = (source: string, title: string, summary: string, url: string): ResearchNote => ({ id: id(), source, title, summary, url, createdAt: new Date().toISOString() });
+const note = (source: string, title: string, summary: string, url: string, location?: { latitude: number; longitude: number }): ResearchNote => ({ id: id(), source, title, summary, url, ...location, createdAt: new Date().toISOString() });
 
 export function suggestedSources(lenses: string[]) { return sourceCatalog.filter(source => source.lenses.some(lens => lenses.includes(lens))); }
 export function sourceAvailability(source: SourceDefinition, settings: PublicServiceSettings) { return source.needs === "none" || Boolean(settings[source.needs]); }
@@ -20,12 +20,12 @@ export async function collectSource(source: SourceDefinition, site: SiteRecord, 
   if (source.id === "terrain") {
     const url = new URL("https://api.open-meteo.com/v1/elevation"); url.search = new URLSearchParams({ latitude: String(site.latitude), longitude: String(site.longitude) }).toString();
     const response = await fetch(url); if (!response.ok) throw new Error(`Open-Meteo ${response.status} 응답`); const payload = await response.json(); const elevation = Array.isArray(payload.elevation) ? payload.elevation[0] : payload.elevation;
-    return note(source.source, source.title, `대지 중심점(${site.latitude.toFixed(5)}, ${site.longitude.toFixed(5)})의 DEM 고도 표본은 ${elevation ?? "미확인"}m입니다. ${source.limitation}`, "https://open-meteo.com/");
+    return note(source.source, source.title, `대지 중심점(${site.latitude.toFixed(5)}, ${site.longitude.toFixed(5)})의 DEM 고도 표본은 ${elevation ?? "미확인"}m입니다. ${source.limitation}`, "https://open-meteo.com/", site);
   }
   if (source.id === "air") {
     const url = new URL("https://air-quality-api.open-meteo.com/v1/air-quality"); url.search = new URLSearchParams({ latitude: String(site.latitude), longitude: String(site.longitude), current: "pm10,pm2_5,carbon_monoxide,nitrogen_dioxide", timezone: "Asia/Seoul" }).toString();
     const response = await fetch(url); if (!response.ok) throw new Error(`Open-Meteo 대기질 ${response.status} 응답`); const payload = await response.json(); const current = payload.current ?? {};
-    return note(source.source, source.title, `대지 중심 격자 표본: PM10 ${current.pm10 ?? "미확인"} μg/m³, PM2.5 ${current.pm2_5 ?? "미확인"} μg/m³, NO₂ ${current.nitrogen_dioxide ?? "미확인"} μg/m³. ${source.limitation}`, "https://open-meteo.com/en/docs/air-quality-api");
+    return note(source.source, source.title, `대지 중심 격자 표본: PM10 ${current.pm10 ?? "미확인"} μg/m³, PM2.5 ${current.pm2_5 ?? "미확인"} μg/m³, NO₂ ${current.nitrogen_dioxide ?? "미확인"} μg/m³. ${source.limitation}`, "https://open-meteo.com/en/docs/air-quality-api", site);
   }
   if (source.id === "vworldParcel") {
     const candidates = await fetchVworldBrowserParcel({ key: settings.vworldKey, latitude: site.latitude, longitude: site.longitude });

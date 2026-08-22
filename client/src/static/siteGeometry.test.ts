@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boundaryGeoJson, boundaryMetrics } from "./siteGeometry";
+import { boundaryGeoJson, boundaryMetrics, distanceMeters } from "./siteGeometry";
 
 describe("site geometry", () => {
   const boundary = [{ lat: 35.1467, lng: 126.921 }, { lat: 35.1467, lng: 126.922 }, { lat: 35.1477, lng: 126.922 }, { lat: 35.1477, lng: 126.921 }];
@@ -9,4 +9,5 @@ describe("site geometry", () => {
     expect(metrics.areaSqm).toBeGreaterThan(9_000);
     expect(metrics.perimeterMeters).toBeGreaterThan(300);
   });
+  it("calculates a short map radius distance", () => expect(distanceMeters({ lat: 35.1467, lng: 126.921 }, { lat: 35.1476, lng: 126.921 })).toBeGreaterThan(90));
 });
