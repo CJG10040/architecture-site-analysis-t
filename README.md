@@ -14,8 +14,8 @@ VWorld·공공데이터포털·SGIS·OpenAI·Gemini·Anthropic 키는 코드·Gi
 
 1. GitHub에서 이 저장소의 **Settings → Pages**를 열고 Source를 **GitHub Actions**로 선택합니다.
 2. `main` 브랜치에 push하면 `.github/workflows/deploy-pages.yml`이 정적 앱을 배포합니다.
-3. 배포 주소는 일반적으로 `https://<GitHub계정>.github.io/<저장소이름>/`입니다.
-4. VWorld 개발자센터의 인증키 허용 도메인에는 위 Pages 주소의 도메인 부분인 `<GitHub계정>.github.io`를 등록합니다. 등록 형식은 VWorld 발급 화면의 안내를 우선합니다.
+3. 현재 배포 주소는 `https://cjg10040.github.io/architecture-site-analysis-m/`입니다.
+4. VWorld 개발자센터의 인증키 허용 도메인에는 `https://cjg10040.github.io`를 등록합니다. 입력란이 서비스 주소를 요구하면 전체 Pages 주소를 사용하며, 발급 화면의 안내를 우선합니다.
 
 ## 제한
 
