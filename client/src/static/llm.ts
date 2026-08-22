@@ -1,6 +1,6 @@
 import type { LlmProvider, LocalProject } from "./model";
 
-function promptFor(project: LocalProject) {
+export function buildDesignPrompt(project: LocalProject) {
   const observations = project.observations.map(item => `- ${item.title}: ${item.note}`).join("\n") || "(현장 관찰 없음)";
   const research = project.researchNotes.map(item => `- ${item.source} / ${item.title}: ${item.summary}`).join("\n") || "(수집 메모 없음)";
   return `당신은 건축학도 대지조사를 돕는 설계 튜터입니다. 다음 개인 프로젝트를 바탕으로 사실·해석·추가조사·공간 가설을 구분해 한국어로 간결하게 제안하세요. 법규 확정이나 인허가 판단은 하지 마세요.\n\n프로젝트: ${project.title}\n주소: ${project.site.address || "미입력"}\n조사 렌즈: ${project.lenses.join(", ") || "미선택"}\n\n공공데이터·조사 메모\n${research}\n\n현장 관찰\n${observations}`;
@@ -8,7 +8,7 @@ function promptFor(project: LocalProject) {
 
 export async function requestLlm(provider: LlmProvider, apiKey: string, project: LocalProject) {
   if (!apiKey.trim()) throw new Error("선택한 제공자의 API 키를 먼저 입력하세요.");
-  const prompt = promptFor(project);
+  const prompt = buildDesignPrompt(project);
   if (provider === "openai") {
     const response = await fetch("https://api.openai.com/v1/responses", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ model: "gpt-4.1-mini", input: prompt }) });
     const json = await response.json();

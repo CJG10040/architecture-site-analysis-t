@@ -1,7 +1,7 @@
 export type LlmProvider = "openai" | "gemini" | "anthropic";
 
 export type BoundaryPoint = { lat: number; lng: number };
-export type SiteRecord = { address: string; latitude: number; longitude: number; boundary: BoundaryPoint[] };
+export type SiteRecord = { address: string; latitude: number; longitude: number; boundary: BoundaryPoint[]; areaSqm?: number; perimeterMeters?: number; geoJson?: { type: "Polygon"; coordinates: number[][][] }; pnu?: string; parcelLabel?: string };
 export type Observation = { id: string; title: string; note: string; category: string; createdAt: string };
 export type ResearchNote = { id: string; source: string; title: string; summary: string; url?: string; createdAt: string };
 export type DesignNote = { id: string; question: string; evidence: string; spatialIdea: string; createdAt: string };
@@ -19,7 +19,7 @@ export type LocalProject = {
   updatedAt: string;
 };
 
-export type PublicServiceSettings = { vworldKey: string; dataGoKrKey: string; sgisKey: string };
+export type PublicServiceSettings = { googleMapsKey?: string; vworldKey: string; dataGoKrKey: string; sgisClientId?: string; sgisClientSecret?: string; sgisKey?: string };
 export type StoredWorkspace = { schemaVersion: 1; activeProjectId: string | null; projects: LocalProject[] };
 
 export const workspaceStorageKey = "site-study-static-workspace-v1";

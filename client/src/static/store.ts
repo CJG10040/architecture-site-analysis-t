@@ -1,7 +1,7 @@
 import type { LlmProvider, PublicServiceSettings, StoredWorkspace } from "./model";
 import { createWorkspace, normalizeWorkspace, settingsStorageKey, workspaceStorageKey } from "./model";
 
-const emptyPublicServices: PublicServiceSettings = { vworldKey: "", dataGoKrKey: "", sgisKey: "" };
+const emptyPublicServices: PublicServiceSettings = { googleMapsKey: "", vworldKey: "", dataGoKrKey: "", sgisClientId: "", sgisClientSecret: "" };
 const llmSessionPrefix = "site-study-static-llm-";
 
 export function loadWorkspace(): StoredWorkspace {

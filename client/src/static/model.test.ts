@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createLocalProject, createWorkspace, getActiveProject, normalizeWorkspace, updateProject } from "./model";
+import { createLocalProject, createWorkspace, getActiveProject, normalizeWorkspace, projectSnapshot, updateProject } from "./model";
 
 describe("local static workspace", () => {
   it("creates a usable project without a server or account", () => {
@@ -17,5 +17,12 @@ describe("local static workspace", () => {
     const workspace = createWorkspace(createLocalProject("초안"));
     const updated = updateProject(workspace, { ...getActiveProject(workspace), title: "수정본" });
     expect(getActiveProject(updated).title).toBe("수정본");
+  });
+
+  it("exports project data without any API credential fields", () => {
+    const snapshot = projectSnapshot(createLocalProject("안전한 백업"));
+    expect(snapshot).not.toContain("ApiKey");
+    expect(snapshot).not.toContain("ServiceKey");
+    expect(snapshot).not.toContain("ClientSecret");
   });
 });
