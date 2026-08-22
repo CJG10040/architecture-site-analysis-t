@@ -1,7 +1,7 @@
 import type { LlmProvider, PublicServiceSettings, StoredWorkspace } from "./model";
 import { createWorkspace, normalizeWorkspace, settingsStorageKey, workspaceStorageKey } from "./model";
 
-const emptyPublicServices: PublicServiceSettings = { googleMapsKey: "", vworldKey: "", dataGoKrKey: "", sgisClientId: "", sgisClientSecret: "" };
+const emptyPublicServices: PublicServiceSettings = { naverMapsClientId: "", vworldKey: "", dataGoKrKey: "", sgisClientId: "", sgisClientSecret: "" };
 const llmSessionPrefix = "site-study-static-llm-";
 
 export function loadWorkspace(): StoredWorkspace {
@@ -13,7 +13,10 @@ export function saveWorkspace(workspace: StoredWorkspace) {
 }
 
 export function loadPublicServices(): PublicServiceSettings {
-  try { return { ...emptyPublicServices, ...JSON.parse(sessionStorage.getItem(settingsStorageKey) ?? "{}") }; } catch { return emptyPublicServices; }
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(settingsStorageKey) ?? "{}") as Record<string, unknown>;
+    return { ...emptyPublicServices, naverMapsClientId: typeof stored.naverMapsClientId === "string" ? stored.naverMapsClientId : "", vworldKey: typeof stored.vworldKey === "string" ? stored.vworldKey : "", dataGoKrKey: typeof stored.dataGoKrKey === "string" ? stored.dataGoKrKey : "", sgisClientId: typeof stored.sgisClientId === "string" ? stored.sgisClientId : "", sgisClientSecret: typeof stored.sgisClientSecret === "string" ? stored.sgisClientSecret : "" };
+  } catch { return emptyPublicServices; }
 }
 
 export function savePublicServices(settings: PublicServiceSettings) {

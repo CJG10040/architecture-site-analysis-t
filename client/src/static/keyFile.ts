@@ -1,7 +1,7 @@
 import type { LlmProvider, PublicServiceSettings } from "./model";
 
 export type KeyFile = Partial<PublicServiceSettings> & { openaiApiKey?: string; geminiApiKey?: string; anthropicApiKey?: string };
-const allowed = ["googleMapsKey", "vworldKey", "dataGoKrKey", "sgisClientId", "sgisClientSecret", "openaiApiKey", "geminiApiKey", "anthropicApiKey"] as const;
+const allowed = ["naverMapsClientId", "vworldKey", "dataGoKrKey", "sgisClientId", "sgisClientSecret", "openaiApiKey", "geminiApiKey", "anthropicApiKey"] as const;
 
 export function parseKeyFile(value: unknown): KeyFile {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("키 파일은 JSON 객체여야 합니다.");
@@ -13,7 +13,7 @@ export function parseKeyFile(value: unknown): KeyFile {
 }
 
 export function emptyKeyFileTemplate() {
-  return JSON.stringify({ schema: "site-analysis-keys-v1", googleMapsKey: "", vworldKey: "", dataGoKrKey: "", sgisClientId: "", sgisClientSecret: "", openaiApiKey: "", geminiApiKey: "", anthropicApiKey: "" }, null, 2);
+  return JSON.stringify({ schema: "site-analysis-keys-v1", naverMapsClientId: "", vworldKey: "", dataGoKrKey: "", sgisClientId: "", sgisClientSecret: "", openaiApiKey: "", geminiApiKey: "", anthropicApiKey: "" }, null, 2);
 }
 
 export function llmKeyFromFile(file: KeyFile, provider: LlmProvider) { return file[`${provider}ApiKey` as keyof KeyFile] ?? ""; }

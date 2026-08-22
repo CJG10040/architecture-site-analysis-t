@@ -1,5 +1,5 @@
 import type { LlmProvider, PublicServiceSettings } from "./model";
-import { loadGoogleMaps } from "./googleMaps";
+import { loadNaverMaps } from "./naverMaps";
 import { fetchVworldBrowserParcel } from "./vworld";
 
 export type ConnectionStatus = "idle" | "checking" | "connected" | "missing" | "cors" | "approval" | "error";
@@ -14,11 +14,11 @@ export function classifyBrowserError(cause: unknown): ConnectionResult {
   return failure(message);
 }
 
-export async function checkPublicService(service: "googleMaps" | "vworld" | "dataGoKr" | "sgis", settings: PublicServiceSettings): Promise<ConnectionResult> {
+export async function checkPublicService(service: "naverMaps" | "vworld" | "dataGoKr" | "sgis", settings: PublicServiceSettings): Promise<ConnectionResult> {
   try {
-    if (service === "googleMaps") {
-      if (!settings.googleMapsKey) return { status: "missing", message: "Google Maps 브라우저 키가 없습니다." };
-      await loadGoogleMaps(settings.googleMapsKey); return success("Maps JavaScript SDK를 불러왔습니다.");
+    if (service === "naverMaps") {
+      if (!settings.naverMapsClientId) return { status: "missing", message: "네이버 지도 Client ID가 없습니다." };
+      await loadNaverMaps(settings.naverMapsClientId); return success("네이버 지도 Web Dynamic Map SDK를 불러왔습니다.");
     }
     if (service === "vworld") {
       if (!settings.vworldKey) return { status: "missing", message: "VWorld 인증키가 없습니다." };

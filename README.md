@@ -4,7 +4,7 @@ GitHub Pages에서 동작하는 개인 학습·과제용 정적 브라우저 도
 
 ## 개인 API 키 원칙
 
-VWorld·공공데이터포털·SGIS·OpenAI·Gemini·Anthropic 키는 코드·GitHub 저장소·JSON 내보내기 파일에 넣지 않습니다. 앱을 연 뒤 우측 **개인 키 설정**에서 직접 입력하면 해당 브라우저 세션에만 저장됩니다. 공용 기기에서는 사용을 마친 뒤 `세션 키 지우기`를 누르세요.
+네이버 지도 Client ID, VWorld·공공데이터포털·SGIS·OpenAI·Gemini·Anthropic 키는 코드·GitHub 저장소·JSON 내보내기 파일에 넣지 않습니다. 앱을 연 뒤 우측 **API 설정**에서 직접 입력하면 해당 브라우저 세션에만 저장됩니다. 공용 기기에서는 사용을 마친 뒤 `세션 키 지우기`를 누르세요.
 
 ## 데이터 보관
 
@@ -16,6 +16,15 @@ VWorld·공공데이터포털·SGIS·OpenAI·Gemini·Anthropic 키는 코드·Gi
 2. `main` 브랜치에 push하면 `.github/workflows/deploy-pages.yml`이 정적 앱을 배포합니다.
 3. 현재 배포 주소는 `https://cjg10040.github.io/architecture-site-analysis-m/`입니다.
 4. VWorld 개발자센터의 인증키 허용 도메인에는 `https://cjg10040.github.io`를 등록합니다. 입력란이 서비스 주소를 요구하면 전체 Pages 주소를 사용하며, 발급 화면의 안내를 우선합니다.
+
+## 네이버 지도 설정
+
+1. NAVER CLOUD PLATFORM 콘솔에서 **Services → Application Services → Maps → Application**으로 이동해 Application을 등록합니다.
+2. 서비스 선택에서 **Web Dynamic Map**을 활성화하고, Web 서비스 URL에 `https://cjg10040.github.io`를 등록합니다.
+3. 발급된 **Client ID만** 앱의 **API 설정 → 네이버 지도**에 입력하거나 키 JSON 파일의 `naverMapsClientId` 필드에 넣습니다. 이 정적 도구는 지도 SDK에 Client Secret을 입력하지 않습니다.
+4. 연결 확인 뒤에는 국내 도로명 주소·지번 검색, 지도 클릭, 경계 정점 추가·드래그 보정, 조사 반경과 수집 근거 오버레이를 사용할 수 있습니다.
+
+네이버 지도 Web Dynamic Map은 JavaScript SDK로 제공되며, Client ID와 `Dynamic Map` 서비스 선택이 필요합니다. 서비스 선택이 누락되면 할당량 오류가 발생할 수 있습니다. [네이버 지도 API v3 시작 가이드](https://navermaps.github.io/maps.js.ncp/docs/tutorial-2-Getting-Started.html)와 [Client ID 발급 안내](https://navermaps.github.io/maps.js.ncp/docs/tutorial-1-Getting-Client-ID.html)를 함께 확인하세요.
 
 ## 제한
 
