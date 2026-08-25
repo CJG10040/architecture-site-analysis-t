@@ -9,8 +9,10 @@ const failure = (message: string): ConnectionResult => ({ status: "error", messa
 
 export function classifyBrowserError(cause: unknown): ConnectionResult {
   const message = cause instanceof Error ? cause.message : "알 수 없는 오류";
+  if (/INVALID_KEY|등록되지 않은 인증키/i.test(message)) return { status: "approval", message: `VWorld가 인증키를 인식하지 못했습니다. VWorld 개발자센터에서 실제 인증키·사용상태·2D 데이터 API 2.0 발급 여부를 확인하세요. 원문: ${message}`, checkedAt: new Date().toISOString() };
+  if (/INCORRECT_KEY|인증키와 URL|도메인 불일치/i.test(message)) return { status: "approval", message: `VWorld 인증키에 등록한 URL과 요청 domain이 일치하지 않습니다. 원문: ${message}`, checkedAt: new Date().toISOString() };
   if (/Failed to fetch|NetworkError|CORS/i.test(message)) return { status: "cors", message: "브라우저 요청이 차단되었습니다. Pages 도메인 등록 또는 원본 파일 불러오기를 사용하세요.", checkedAt: new Date().toISOString() };
-  if (/401|403|승인|approval|등록|INCORRECT_KEY|INVALID_KEY|UNAVAILABLE_KEY|인증키|도메인/i.test(message)) return { status: "approval", message: `키·도메인 등록·활용 승인을 확인하세요. 원문: ${message}`, checkedAt: new Date().toISOString() };
+  if (/401|403|승인|approval|등록|UNAVAILABLE_KEY|인증키/i.test(message)) return { status: "approval", message: `키·도메인 등록·활용 승인을 확인하세요. 원문: ${message}`, checkedAt: new Date().toISOString() };
   return failure(message);
 }
 

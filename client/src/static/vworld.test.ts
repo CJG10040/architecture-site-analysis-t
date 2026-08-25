@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchVworldBrowserParcel, fetchVworldWfs, normalizeVworldBrowserCandidates, normalizeVworldWfsFeatures } from "./vworld";
+import { fetchVworldBrowserParcel, fetchVworldWfs, normalizeVworldBrowserCandidates, normalizeVworldKey, normalizeVworldWfsFeatures } from "./vworld";
+
+describe("normalizeVworldKey", () => {
+  it("removes copied wrapping quotes and whitespace without exposing the key", () => {
+    expect(normalizeVworldKey("  \"abc-123\" \n")).toBe("abc-123");
+  });
+});
 
 describe("normalizeVworldBrowserCandidates", () => {
   it("reads parcel metadata without preserving a browser key", () => {

@@ -3,6 +3,10 @@ import type { SpatialGeometry } from "./model";
 export type VworldParcelCandidate = { pnu?: string; parcelNumber?: string; landCategory?: string; areaSqm?: string };
 export type VworldWfsFeature = { id?: string; geometry?: SpatialGeometry; properties: Record<string, unknown> };
 
+export function normalizeVworldKey(value: string) {
+  return value.replace(/^\uFEFF/, "").trim().replace(/^["'`]|["'`]$/g, "").replace(/\s+/g, "");
+}
+
 export function currentVworldDomain() {
   if (typeof window === "undefined") return "";
   const url = new URL(window.location.href);
@@ -99,9 +103,10 @@ export function normalizeVworldBrowserCandidates(payload: unknown): VworldParcel
 }
 
 export async function fetchVworldBrowserParcel(input: { key: string; latitude: number; longitude: number; domain?: string }) {
-  if (!input.key.trim()) throw new Error("VWorld 인증키를 먼저 입력하세요.");
+  const key = normalizeVworldKey(input.key);
+  if (!key) throw new Error("VWorld 인증키를 먼저 입력하세요.");
   const url = new URL("https://api.vworld.kr/req/data");
-  url.search = new URLSearchParams({ service: "data", version: "2.0", request: "GetFeature", data: "LP_PA_CBND_BUBUN", format: "json", errorformat: "json", crs: "EPSG:4326", geometry: "true", attribute: "true", key: input.key.trim(), domain: requestDomain(input.domain), geomFilter: `POINT(${input.longitude} ${input.latitude})`, size: "12" }).toString();
+  url.search = new URLSearchParams({ service: "data", version: "2.0", request: "GetFeature", data: "LP_PA_CBND_BUBUN", format: "json", errorformat: "json", crs: "EPSG:4326", geometry: "true", attribute: "true", key, domain: requestDomain(input.domain), geomFilter: `POINT(${input.longitude} ${input.latitude})`, size: "12" }).toString();
   try {
     const body = await jsonp(url.toString());
     const apiError = apiErrorMessage(body);
@@ -115,11 +120,12 @@ export async function fetchVworldBrowserParcel(input: { key: string; latitude: n
 }
 
 export async function fetchVworldWfs(input: { key: string; typename: string; latitude: number; longitude: number; radiusMeters: number; maxFeatures?: number; domain?: string }) {
-  if (!input.key.trim()) throw new Error("VWorld 인증키를 먼저 입력하세요.");
+  const key = normalizeVworldKey(input.key);
+  if (!key) throw new Error("VWorld 인증키를 먼저 입력하세요.");
   const bbox = contextBbox(input.latitude, input.longitude, input.radiusMeters);
   const url = new URL("https://api.vworld.kr/req/wfs");
   // VWorld WFS 1.1.0의 BBOX는 위도·경도 순서로 전달한다.
-  url.search = new URLSearchParams({ service: "WFS", version: "1.1.0", request: "GetFeature", key: input.key.trim(), domain: requestDomain(input.domain), typename: input.typename, output: "text/javascript", srsname: "EPSG:4326", bbox: `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`, maxfeatures: String(Math.min(1000, Math.max(1, input.maxFeatures ?? 1000))) }).toString();
+  url.search = new URLSearchParams({ service: "WFS", version: "1.1.0", request: "GetFeature", key, domain: requestDomain(input.domain), typename: input.typename, output: "text/javascript", srsname: "EPSG:4326", bbox: `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`, maxfeatures: String(Math.min(1000, Math.max(1, input.maxFeatures ?? 1000))) }).toString();
   try {
     const payload = await wfsJsonp(url.toString());
     const apiError = apiErrorMessage(payload);
