@@ -14,6 +14,6 @@ VWorld 개발자센터에서 인증키를 신규 신청하거나 수정할 때, 
 4. `VWorld 허용 URL`은 우선 비워둔다. 앱이 현재 Pages 서비스 URL을 브라우저 요청의 `domain` 파라미터로 자동 전송한다.
 5. 대지의 위도·경도를 입력한 뒤 **VWorld 필지 후보 조회**를 실행한다.
 
-브라우저 요청에는 VWorld 공식 문서가 요구하는 `domain` 파라미터가 포함된다. 키를 `https://cjg10040.github.io`처럼 루트 도메인으로 등록했다면 설정 화면의 `VWorld 허용 URL`에 동일한 값을 입력한다. 키를 Pages 전체 주소로 등록했다면 비워두거나 해당 Pages 주소를 입력한다.
+브라우저 요청에는 VWorld 공식 문서가 요구하는 `domain` 파라미터가 포함된다. 2D 데이터 API는 HTML 프로토타입과 같은 JSONP 방식으로 요청하고, WFS는 `format_options=callback:<콜백명>` 방식으로 요청한다. 키를 `https://cjg10040.github.io`처럼 루트 도메인으로 등록했다면 설정 화면의 `VWorld 허용 URL`에 동일한 값을 입력한다. 키를 Pages 전체 주소로 등록했다면 비워두거나 해당 Pages 주소를 입력한다.
 
 브라우저에서 `Failed to fetch` 오류가 보이면 CORS·도메인 등록·브라우저 직접 호출 허용 조건을 확인한다. `INCORRECT_KEY`, `INVALID_KEY`가 보이면 키와 domain이 일치하지 않는 것이다. 사용량이 증가해도 도메인 검증 후 응답이 거부될 수 있다. 키는 GitHub 코드·이슈·JSON 내보내기 파일에 기록하지 않는다.

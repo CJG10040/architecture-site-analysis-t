@@ -16,19 +16,49 @@ function requestDomain(domain?: string) { return domain?.trim() || currentVworld
 function apiErrorMessage(payload: unknown) {
   const root = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
   const response = root.response && typeof root.response === "object" ? root.response as Record<string, unknown> : root;
-  const error = response.error && typeof response.error === "object" ? response.error as Record<string, unknown> : undefined;
+  const error = response.error;
   if (response.status === "ERROR" || error) {
-    const code = typeof error?.code === "string" ? error.code : "VWorld_ERROR";
-    const text = typeof error?.text === "string" ? error.text : "VWorld API가 오류를 반환했습니다.";
+    if (typeof error === "string") return `VWorld_ERROR: ${error}`;
+    const details = error && typeof error === "object" ? error as Record<string, unknown> : {};
+    const code = typeof details.code === "string" ? details.code : "VWorld_ERROR";
+    const text = typeof details.text === "string" ? details.text : "VWorld API가 오류를 반환했습니다.";
     return `${code}: ${text}`;
   }
   return undefined;
 }
 
-async function readJson(response: Response) {
-  const text = await response.text();
-  try { return JSON.parse(text) as unknown; }
-  catch { throw new Error(`VWorld가 JSON이 아닌 응답을 반환했습니다. HTTP ${response.status}`); }
+type JsonpPayload = (payload: unknown) => void;
+
+function jsonp(url: string, parameter = "callback") {
+  return new Promise<unknown>((resolve, reject) => {
+    if (typeof window === "undefined" || typeof document === "undefined") return reject(new Error("브라우저 환경에서만 VWorld 직접 조회를 사용할 수 있습니다."));
+    const callbackName = `__vworld_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const script = document.createElement("script");
+    const callbackWindow = window as unknown as Window & Record<string, JsonpPayload>;
+    let timer: number | undefined;
+    const cleanup = () => { if (timer) window.clearTimeout(timer); delete callbackWindow[callbackName]; script.remove(); };
+    callbackWindow[callbackName] = payload => { cleanup(); resolve(payload); };
+    script.onerror = () => { cleanup(); reject(new Error("VWorld 브라우저 직접 조회 스크립트를 불러오지 못했습니다.")); };
+    script.src = `${url}${url.includes("?") ? "&" : "?"}${parameter}=${encodeURIComponent(callbackName)}`;
+    document.head.appendChild(script);
+    timer = window.setTimeout(() => { cleanup(); reject(new Error("VWorld 브라우저 직접 조회 응답 시간이 초과되었습니다.")); }, 20000);
+  });
+}
+
+function wfsJsonp(url: string) {
+  return new Promise<unknown>((resolve, reject) => {
+    if (typeof window === "undefined" || typeof document === "undefined") return reject(new Error("브라우저 환경에서만 VWorld WFS를 사용할 수 있습니다."));
+    const callbackName = `__vworld_wfs_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const script = document.createElement("script");
+    const callbackWindow = window as unknown as Window & Record<string, JsonpPayload>;
+    let timer: number | undefined;
+    const cleanup = () => { if (timer) window.clearTimeout(timer); delete callbackWindow[callbackName]; script.remove(); };
+    callbackWindow[callbackName] = payload => { cleanup(); resolve(payload); };
+    script.onerror = () => { cleanup(); reject(new Error("VWorld WFS 브라우저 직접 조회 스크립트를 불러오지 못했습니다.")); };
+    script.src = `${url}${url.includes("?") ? "&" : "?"}format_options=callback:${callbackName}`;
+    document.head.appendChild(script);
+    timer = window.setTimeout(() => { cleanup(); reject(new Error("VWorld WFS 응답 시간이 초과되었습니다.")); }, 20000);
+  });
 }
 
 function unwrapFeatureCollection(payload: unknown): Record<string, unknown> {
@@ -71,13 +101,11 @@ export function normalizeVworldBrowserCandidates(payload: unknown): VworldParcel
 export async function fetchVworldBrowserParcel(input: { key: string; latitude: number; longitude: number; domain?: string }) {
   if (!input.key.trim()) throw new Error("VWorld 인증키를 먼저 입력하세요.");
   const url = new URL("https://api.vworld.kr/req/data");
-  url.search = new URLSearchParams({ service: "data", version: "2.0", request: "GetFeature", data: "LP_PA_CBND_BUBUN", format: "json", crs: "EPSG:4326", geometry: "true", attribute: "true", key: input.key.trim(), domain: requestDomain(input.domain), geomFilter: `POINT(${input.longitude} ${input.latitude})`, size: "12" }).toString();
+  url.search = new URLSearchParams({ service: "data", version: "2.0", request: "GetFeature", data: "LP_PA_CBND_BUBUN", format: "json", errorformat: "json", crs: "EPSG:4326", geometry: "true", attribute: "true", key: input.key.trim(), domain: requestDomain(input.domain), geomFilter: `POINT(${input.longitude} ${input.latitude})`, size: "12" }).toString();
   try {
-    const response = await fetch(url, { headers: { Accept: "application/json" } });
-    const body = await readJson(response);
+    const body = await jsonp(url.toString());
     const apiError = apiErrorMessage(body);
     if (apiError) throw new Error(apiError);
-    if (!response.ok) throw new Error(`VWorld가 ${response.status} 상태로 응답했습니다.`);
     return normalizeVworldBrowserCandidates(body);
   } catch (error) {
     const message = error instanceof Error ? error.message : "알 수 없는 오류";
@@ -91,13 +119,11 @@ export async function fetchVworldWfs(input: { key: string; typename: string; lat
   const bbox = contextBbox(input.latitude, input.longitude, input.radiusMeters);
   const url = new URL("https://api.vworld.kr/req/wfs");
   // VWorld WFS 1.1.0의 BBOX는 위도·경도 순서로 전달한다.
-  url.search = new URLSearchParams({ service: "WFS", version: "1.1.0", request: "GetFeature", key: input.key.trim(), domain: requestDomain(input.domain), typename: input.typename, output: "application/json", srsname: "EPSG:4326", bbox: `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`, maxfeatures: String(Math.min(1000, Math.max(1, input.maxFeatures ?? 1000))) }).toString();
+  url.search = new URLSearchParams({ service: "WFS", version: "1.1.0", request: "GetFeature", key: input.key.trim(), domain: requestDomain(input.domain), typename: input.typename, output: "text/javascript", srsname: "EPSG:4326", bbox: `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`, maxfeatures: String(Math.min(1000, Math.max(1, input.maxFeatures ?? 1000))) }).toString();
   try {
-    const response = await fetch(url, { headers: { Accept: "application/json" } });
-    const payload = await readJson(response);
+    const payload = await wfsJsonp(url.toString());
     const apiError = apiErrorMessage(payload);
     if (apiError) throw new Error(apiError);
-    if (!response.ok) throw new Error(`VWorld WFS가 ${response.status} 상태로 응답했습니다.`);
     const features = normalizeVworldWfsFeatures(payload);
     if (!features.length && typeof payload === "object" && payload !== null && JSON.stringify(payload).match(/error|exception|fail/i)) throw new Error("VWorld WFS가 오류 응답을 반환했습니다.");
     return { features, bbox, typename: input.typename };
