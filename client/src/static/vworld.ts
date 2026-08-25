@@ -1,5 +1,7 @@
+import type { SpatialGeometry } from "./model";
+
 export type VworldParcelCandidate = { pnu?: string; parcelNumber?: string; landCategory?: string; areaSqm?: string };
-export type VworldWfsFeature = { id?: string; geometry?: unknown; properties: Record<string, unknown> };
+export type VworldWfsFeature = { id?: string; geometry?: SpatialGeometry; properties: Record<string, unknown> };
 
 function unwrapFeatureCollection(payload: unknown): Record<string, unknown> {
   const root = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
@@ -13,7 +15,8 @@ export function normalizeVworldWfsFeatures(payload: unknown): VworldWfsFeature[]
   const features = Array.isArray(collection.features) ? collection.features : [];
   return features.filter(feature => feature && typeof feature === "object").map(feature => {
     const item = feature as Record<string, unknown>;
-    return { id: typeof item.id === "string" ? item.id : undefined, geometry: item.geometry, properties: item.properties && typeof item.properties === "object" ? item.properties as Record<string, unknown> : {} };
+    const geometry = item.geometry && typeof item.geometry === "object" && typeof (item.geometry as Record<string, unknown>).type === "string" ? item.geometry as SpatialGeometry : undefined;
+    return { id: typeof item.id === "string" ? item.id : undefined, geometry, properties: item.properties && typeof item.properties === "object" ? item.properties as Record<string, unknown> : {} };
   });
 }
 

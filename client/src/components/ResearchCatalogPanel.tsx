@@ -3,6 +3,7 @@ import { CheckCircle2, CircleAlert, ClipboardCheck, ExternalLink, LibraryBig, Ma
 import { Badge } from "@/components/ui/badge";
 import type { LocalProject } from "@/static/model";
 import { goalAlignment, priorityLabels, researchCatalog, statusLabels, type ResearchCatalogStatus } from "@/static/researchCatalog";
+import { summarizeSpatialLayer } from "@/static/spatialAnalysis";
 
 const statusStyles: Record<ResearchCatalogStatus, string> = {
   implemented: "bg-[#e8f0e4] text-[#42633d]",
@@ -27,6 +28,7 @@ export function ResearchCatalogPanel({ project }: { project: LocalProject }) {
   const visibleItems = researchCatalog.filter(item => (filter === "all" || item.status === filter) && (category === "전체" || item.category === category));
   const implementedCount = researchCatalog.filter(item => item.status === "implemented").length;
   const plannedCount = researchCatalog.filter(item => item.status === "planned").length;
+  const spatialSummary = project.spatialLayers.map(layer => ({ ...layer, metrics: summarizeSpatialLayer(layer, project.studyRadiusMeters) }));
 
   return <section className="mt-5 border border-stone-300 bg-[#fbfaf7] p-4">
     <div className="flex flex-wrap items-start justify-between gap-4">
@@ -42,6 +44,8 @@ export function ResearchCatalogPanel({ project }: { project: LocalProject }) {
       <div className="flex flex-wrap items-start gap-2"><ClipboardCheck className="mt-0.5 h-4 w-4 text-[#a9684f]" /><div><p className="text-sm font-medium text-stone-900">초기 목표 부합 여부</p><p className="mt-1 text-xs leading-5 text-stone-600">필지 확정 → 조사 주제 선택 → 출처 있는 수집 → 공간 관계 → 현장 검증 → 설계 질문·가설의 순서로 점검합니다.</p></div></div>
       <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{alignment.map(item => <div key={item.id} className={`border p-3 ${alignmentStyles[item.status]}`}><div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-stone-900">{item.title}</p><span className="text-[10px] font-medium text-stone-500">{alignmentLabels[item.status]}</span></div><p className="mt-1 text-[11px] leading-5 text-stone-600">{item.detail}</p></div>)}</div>
     </div>
+
+    {spatialSummary.length > 0 && <div className="mt-4 border border-[#bfcdb5] bg-[#f3f8f0] p-3"><div className="flex items-center gap-2"><MapPinned className="h-4 w-4 text-[#46603e]" /><p className="text-sm font-medium text-stone-900">현재 프로젝트의 공간 레이어</p></div><div className="mt-2 grid gap-2 md:grid-cols-2">{spatialSummary.map(layer => <div key={layer.id} className="border border-[#cbd9c4] bg-white p-3"><div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-stone-900">{layer.title}</p><span className="text-[10px] text-[#42633d]">지도 표시 중</span></div><p className="mt-1 text-[11px] leading-5 text-stone-600">보존 {layer.metrics.featureCount.toLocaleString("ko-KR")}개 / 응답 {layer.totalFeatureCount.toLocaleString("ko-KR")}개 · geometry {layer.metrics.geometryTypes}</p><p className="mt-1 text-[11px] text-stone-500">속성 필드 {layer.metrics.propertyCount}개 · {layer.truncated ? "300개까지 보존, 원 응답은 더 많음" : "응답 객체를 모두 보존"}</p>{layer.metrics.totalLengthMeters > 0 && <p className="mt-1 text-[11px] text-stone-500">보존 선형 길이 약 {Math.round(layer.metrics.totalLengthMeters).toLocaleString("ko-KR")}m · 교통량 아님</p>}{layer.metrics.totalAreaSqm > 0 && <p className="mt-1 text-[11px] text-stone-500">보존 footprint 면적 약 {Math.round(layer.metrics.totalAreaSqm).toLocaleString("ko-KR")}㎡ · 건폐율 아님</p>}</div>)}</div><p className="mt-2 text-[11px] leading-5 text-stone-500">레이어가 지도에 보인다는 것은 공간객체의 위치를 확인했다는 의미입니다. 도로 접근성·건물 밀도·용도 관계 같은 설계 해석은 다음 분석 단계에서 별도로 계산합니다.</p></div>}
 
     <div className="mt-4 flex flex-wrap gap-2"><span className="mr-1 self-center text-xs text-stone-500">상태</span>{(["all", "implemented", "partial", "planned", "field"] as const).map(value => <button key={value} type="button" onClick={() => setFilter(value)} className={`border px-2.5 py-1.5 text-xs ${filter === value ? "border-[#a9684f] bg-[#fbf0e5] text-[#7a422f]" : "border-stone-300 bg-white text-stone-600"}`}>{value === "all" ? "전체" : statusLabels[value]}</button>)}<select value={category} onChange={event => setCategory(event.target.value)} className="border border-stone-300 bg-white px-2.5 py-1.5 text-xs text-stone-600"><option value="전체">모든 조사 영역</option>{categories.slice(1).map(item => <option key={item} value={item}>{item}</option>)}</select></div>
 

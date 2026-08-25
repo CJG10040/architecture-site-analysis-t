@@ -3,7 +3,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { LocateFixed, MapPin, PencilLine, RotateCcw, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { BoundaryPoint, MapOverlay } from "@/static/model";
+import type { BoundaryPoint, MapOverlay, SpatialLayer } from "@/static/model";
 import { nominatimSearchUrl, openStreetMapTileUrl } from "@/static/mapProvider";
 
 type SearchResult = { lat: number; lng: number; label: string };
@@ -14,6 +14,7 @@ type Props = {
   boundary: BoundaryPoint[];
   radiusMeters: number;
   overlays: MapOverlay[];
+  spatialLayers: SpatialLayer[];
   onSiteChange: (change: { latitude?: number; longitude?: number; address?: string }) => void;
   onBoundaryChange: (boundary: BoundaryPoint[]) => void;
 };
@@ -23,7 +24,7 @@ let lastNominatimRequestAt = 0;
 
 const vertexIcon = L.divIcon({ className: "site-boundary-vertex", iconSize: [18, 18], iconAnchor: [9, 9] });
 
-export function OpenStreetMapPicker({ latitude, longitude, address, boundary, radiusMeters, overlays, onSiteChange, onBoundaryChange }: Props) {
+export function OpenStreetMapPicker({ latitude, longitude, address, boundary, radiusMeters, overlays, spatialLayers, onSiteChange, onBoundaryChange }: Props) {
   const mapElement = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const boundaryRef = useRef(boundary);
@@ -84,6 +85,18 @@ export function OpenStreetMapPicker({ latitude, longitude, address, boundary, ra
     overlays.forEach(item => L.circleMarker([item.latitude, item.longitude], { radius: 7, color: "#ffffff", weight: 1, fillColor: "#a9684f", fillOpacity: 1 }).addTo(layer));
     return () => { layer.remove(); };
   }, [latitude, longitude, radiusMeters, overlays]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const layer = L.layerGroup().addTo(map);
+    spatialLayers.forEach(spatialLayer => {
+      const color = spatialLayer.id === "vworldRoads" ? "#6b4f3b" : "#65745c";
+      const data = { type: "FeatureCollection", features: spatialLayer.features.map(feature => ({ type: "Feature", id: feature.id, geometry: feature.geometry, properties: { ...feature.properties, __layerTitle: spatialLayer.title } })) } as GeoJSON.FeatureCollection;
+      L.geoJSON(data, { style: { color, weight: spatialLayer.id === "vworldRoads" ? 2.5 : 1.2, opacity: 0.7, fillColor: color, fillOpacity: spatialLayer.id === "vworldRoads" ? 0 : 0.14 }, pointToLayer: (_feature, point) => L.circleMarker(point, { radius: 4, color, fillColor: color, fillOpacity: 0.7, weight: 1 }), onEachFeature: (feature, featureLayer) => featureLayer.bindTooltip(`${spatialLayer.title} · ${feature.id ?? "객체"}`) }).addTo(layer);
+    });
+    return () => { layer.remove(); };
+  }, [spatialLayers]);
 
   const applySearchResult = (result: SearchResult) => {
     mapRef.current?.setView([result.lat, result.lng], 18);

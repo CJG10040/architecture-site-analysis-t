@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LocateFixed, MapPin, PencilLine, RotateCcw, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { BoundaryPoint, MapOverlay } from "@/static/model";
+import type { BoundaryPoint, MapOverlay, SpatialLayer } from "@/static/model";
 import { loadNaverMaps } from "@/static/naverMaps";
 
 type Props = {
@@ -12,6 +12,7 @@ type Props = {
   boundary: BoundaryPoint[];
   radiusMeters: number;
   overlays: MapOverlay[];
+  spatialLayers: SpatialLayer[];
   onSiteChange: (change: { latitude?: number; longitude?: number; address?: string }) => void;
   onBoundaryChange: (boundary: BoundaryPoint[]) => void;
   onOpenSettings: () => void;
@@ -20,12 +21,13 @@ type Props = {
 
 const asPoint = (latLng: any): BoundaryPoint => ({ lat: latLng.lat(), lng: latLng.lng() });
 
-export function SiteMapPicker({ clientId, latitude, longitude, address, boundary, radiusMeters, overlays, onSiteChange, onBoundaryChange, onOpenSettings, onSwitchToOpenStreetMap }: Props) {
+export function SiteMapPicker({ clientId, latitude, longitude, address, boundary, radiusMeters, overlays, spatialLayers, onSiteChange, onBoundaryChange, onOpenSettings, onSwitchToOpenStreetMap }: Props) {
   const mapElement = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const boundaryObjectRef = useRef<any>(null);
   const boundaryMarkersRef = useRef<any[]>([]);
   const overlayObjectsRef = useRef<any[]>([]);
+  const spatialObjectsRef = useRef<any[]>([]);
   const boundaryRef = useRef(boundary);
   const drawingRef = useRef(false);
   const onSiteChangeRef = useRef(onSiteChange);
@@ -89,7 +91,7 @@ export function SiteMapPicker({ clientId, latitude, longitude, address, boundary
       return marker;
     });
     return () => { shape.setMap?.(null); boundaryMarkersRef.current.forEach(marker => marker.setMap?.(null)); };
-  }, [boundary]);
+  }, [boundary, status]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -101,7 +103,26 @@ export function SiteMapPicker({ clientId, latitude, longitude, address, boundary
     const evidenceMarkers = overlays.map(item => new naver.maps.Marker({ map, position: new naver.maps.LatLng(item.latitude, item.longitude), title: `${item.source}: ${item.title}` }));
     overlayObjectsRef.current = [circle, ...evidenceMarkers];
     return () => overlayObjectsRef.current.forEach(item => item.setMap?.(null));
-  }, [latitude, longitude, radiusMeters, overlays]);
+  }, [latitude, longitude, radiusMeters, overlays, status]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const naver = (window as any).naver;
+    if (!map || !naver?.maps) return;
+    spatialObjectsRef.current.forEach(item => item.setMap?.(null));
+    const objects: any[] = [];
+    const toPath = (coordinates: unknown) => Array.isArray(coordinates) ? coordinates.filter(item => Array.isArray(item) && item.length >= 2 && Number.isFinite(Number(item[0])) && Number.isFinite(Number(item[1]))).map(item => new naver.maps.LatLng(Number(item[1]), Number(item[0]))) : [];
+    spatialLayers.forEach(spatialLayer => spatialLayer.features.forEach(feature => {
+      const geometry = feature.geometry;
+      const color = spatialLayer.id === "vworldRoads" ? "#6b4f3b" : "#65745c";
+      if (geometry.type === "LineString") objects.push(new naver.maps.Polyline({ map, path: toPath(geometry.coordinates), strokeColor: color, strokeOpacity: .72, strokeWeight: spatialLayer.id === "vworldRoads" ? 3 : 2 }));
+      if (geometry.type === "MultiLineString" && Array.isArray(geometry.coordinates)) geometry.coordinates.forEach(path => objects.push(new naver.maps.Polyline({ map, path: toPath(path), strokeColor: color, strokeOpacity: .72, strokeWeight: spatialLayer.id === "vworldRoads" ? 3 : 2 })));
+      if (geometry.type === "Polygon" && Array.isArray(geometry.coordinates)) objects.push(new naver.maps.Polygon({ map, paths: geometry.coordinates.map((ring: unknown) => toPath(ring)), strokeColor: color, strokeOpacity: .65, strokeWeight: 1, fillColor: color, fillOpacity: .12 }));
+      if (geometry.type === "MultiPolygon" && Array.isArray(geometry.coordinates)) geometry.coordinates.forEach(polygon => objects.push(new naver.maps.Polygon({ map, paths: polygon.map((ring: unknown) => toPath(ring)), strokeColor: color, strokeOpacity: .65, strokeWeight: 1, fillColor: color, fillOpacity: .12 })));
+    }));
+    spatialObjectsRef.current = objects;
+    return () => spatialObjectsRef.current.forEach(item => item.setMap?.(null));
+  }, [spatialLayers, status]);
 
   const searchAddress = () => {
     const naver = (window as any).naver;

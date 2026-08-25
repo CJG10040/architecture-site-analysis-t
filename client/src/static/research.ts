@@ -39,7 +39,10 @@ export async function collectSource(source: SourceDefinition, site: SiteRecord, 
     const typename = source.id === "vworldBuildings" ? "lt_c_spbd" : "lt_l_moctlink";
     const result = await fetchVworldWfs({ key: settings.vworldKey, typename, latitude: site.latitude, longitude: site.longitude, radiusMeters: siteRadius(radiusMeters) });
     const propertyNames = Array.from(new Set(result.features.flatMap(feature => Object.keys(feature.properties)))).slice(0, 8).join(", ");
-    return note(source.source, source.title, `조사 반경 ${siteRadius(radiusMeters)}m 내 WFS 객체 ${result.features.length.toLocaleString("ko-KR")}개. 속성 표본: ${propertyNames || "응답 속성 없음"}. ${source.limitation}`, source.id === "vworldBuildings" ? "https://www.data.go.kr/data/15123458/openapi.do" : "https://www.its.go.kr/nodelink/", { latitude: site.latitude, longitude: site.longitude });
+    const spatialFeatures = result.features.filter(feature => feature.geometry).slice(0, 300).map((feature, index) => ({ id: feature.id ?? `${source.id}-${index + 1}`, geometry: feature.geometry!, properties: feature.properties }));
+    const record = note(source.source, source.title, `조사 반경 ${siteRadius(radiusMeters)}m 내 WFS 객체 ${result.features.length.toLocaleString("ko-KR")}개. 지도에는 공간자료 ${spatialFeatures.length.toLocaleString("ko-KR")}개를 표시합니다. 속성 표본: ${propertyNames || "응답 속성 없음"}. ${source.limitation}`, source.id === "vworldBuildings" ? "https://www.data.go.kr/data/15123458/openapi.do" : "https://www.its.go.kr/nodelink/", { latitude: site.latitude, longitude: site.longitude });
+    record.spatialLayer = { id: source.id, title: source.title, source: source.source, fetchedAt: record.createdAt, features: spatialFeatures, totalFeatureCount: result.features.length, truncated: result.features.length > spatialFeatures.length };
+    return record;
   }
   const url = new URL("https://api.data.go.kr/openapi/tn_pubr_public_cty_park_info_api");
   url.search = new URLSearchParams({ serviceKey: settings.dataGoKrKey, pageNo: "1", numOfRows: "5", type: "json" }).toString();

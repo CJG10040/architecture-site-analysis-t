@@ -3,8 +3,11 @@ export type LlmProvider = "openai" | "gemini" | "anthropic";
 export type BoundaryPoint = { lat: number; lng: number };
 export type SiteRecord = { address: string; latitude: number; longitude: number; boundary: BoundaryPoint[]; areaSqm?: number; perimeterMeters?: number; geoJson?: { type: "Polygon"; coordinates: number[][][] }; pnu?: string; parcelLabel?: string };
 export type Observation = { id: string; title: string; note: string; category: string; createdAt: string };
-export type ResearchNote = { id: string; source: string; title: string; summary: string; url?: string; latitude?: number; longitude?: number; createdAt: string };
+export type ResearchNote = { id: string; source: string; title: string; summary: string; url?: string; latitude?: number; longitude?: number; spatialLayer?: SpatialLayer; createdAt: string };
 export type MapOverlay = { id: string; source: string; title: string; summary: string; latitude: number; longitude: number; kind: "research" | "file" };
+export type SpatialGeometry = { type: string; coordinates?: unknown; geometries?: SpatialGeometry[] };
+export type SpatialFeature = { id: string; geometry: SpatialGeometry; properties: Record<string, unknown> };
+export type SpatialLayer = { id: string; title: string; source: string; fetchedAt: string; features: SpatialFeature[]; totalFeatureCount: number; truncated: boolean };
 export type DesignNote = { id: string; question: string; evidence: string; spatialIdea: string; createdAt: string };
 
 export type LocalProject = {
@@ -17,6 +20,7 @@ export type LocalProject = {
   researchNotes: ResearchNote[];
   studyRadiusMeters: number;
   overlays: MapOverlay[];
+  spatialLayers: SpatialLayer[];
   designNotes: DesignNote[];
   createdAt: string;
   updatedAt: string;
@@ -33,7 +37,7 @@ const createId = () => globalThis.crypto?.randomUUID?.() ?? `site-${Date.now()}-
 
 export function createLocalProject(title = "새 대지조사"): LocalProject {
   const timestamp = now();
-  return { schemaVersion: 1, id: createId(), title, lenses: [], site: { address: "", latitude: 35.1467, longitude: 126.921, boundary: [] }, observations: [], researchNotes: [], studyRadiusMeters: 300, overlays: [], designNotes: [], createdAt: timestamp, updatedAt: timestamp };
+  return { schemaVersion: 1, id: createId(), title, lenses: [], site: { address: "", latitude: 35.1467, longitude: 126.921, boundary: [] }, observations: [], researchNotes: [], studyRadiusMeters: 300, overlays: [], spatialLayers: [], designNotes: [], createdAt: timestamp, updatedAt: timestamp };
 }
 
 export function createWorkspace(project = createLocalProject()): StoredWorkspace {
@@ -46,7 +50,7 @@ function isPoint(value: unknown): value is BoundaryPoint {
 
 export function normalizeWorkspace(value: unknown): StoredWorkspace | null {
   if (!value || typeof value !== "object" || (value as { schemaVersion?: unknown }).schemaVersion !== 1 || !Array.isArray((value as StoredWorkspace).projects)) return null;
-  const projects = (value as StoredWorkspace).projects.filter((project): project is LocalProject => Boolean(project && typeof project.id === "string" && typeof project.title === "string" && project.site && Array.isArray(project.site.boundary) && project.site.boundary.every(isPoint))).map(project => ({ ...project, lenses: Array.isArray(project.lenses) ? project.lenses.filter(item => typeof item === "string") : [], observations: Array.isArray(project.observations) ? project.observations : [], researchNotes: Array.isArray(project.researchNotes) ? project.researchNotes : [], studyRadiusMeters: Number.isFinite(project.studyRadiusMeters) ? Math.min(3000, Math.max(50, project.studyRadiusMeters)) : 300, overlays: Array.isArray(project.overlays) ? project.overlays.filter(item => item && Number.isFinite(item.latitude) && Number.isFinite(item.longitude)) : [], designNotes: Array.isArray(project.designNotes) ? project.designNotes : [] }));
+  const projects = (value as StoredWorkspace).projects.filter((project): project is LocalProject => Boolean(project && typeof project.id === "string" && typeof project.title === "string" && project.site && Array.isArray(project.site.boundary) && project.site.boundary.every(isPoint))).map(project => ({ ...project, lenses: Array.isArray(project.lenses) ? project.lenses.filter(item => typeof item === "string") : [], observations: Array.isArray(project.observations) ? project.observations : [], researchNotes: Array.isArray(project.researchNotes) ? project.researchNotes : [], studyRadiusMeters: Number.isFinite(project.studyRadiusMeters) ? Math.min(3000, Math.max(50, project.studyRadiusMeters)) : 300, overlays: Array.isArray(project.overlays) ? project.overlays.filter(item => item && Number.isFinite(item.latitude) && Number.isFinite(item.longitude)) : [], spatialLayers: Array.isArray(project.spatialLayers) ? project.spatialLayers.filter(item => item && typeof item.id === "string" && Array.isArray(item.features)) : [], designNotes: Array.isArray(project.designNotes) ? project.designNotes : [] }));
   if (!projects.length) return null;
   const activeProjectId = projects.some(project => project.id === (value as StoredWorkspace).activeProjectId) ? (value as StoredWorkspace).activeProjectId : projects[0].id;
   return { schemaVersion: 1, activeProjectId, projects };
