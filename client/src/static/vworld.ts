@@ -1,4 +1,28 @@
 export type VworldParcelCandidate = { pnu?: string; parcelNumber?: string; landCategory?: string; areaSqm?: string };
+export type VworldWfsFeature = { id?: string; geometry?: unknown; properties: Record<string, unknown> };
+
+function unwrapFeatureCollection(payload: unknown): Record<string, unknown> {
+  const root = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  const response = root.response && typeof root.response === "object" ? root.response as Record<string, unknown> : root;
+  const result = response.result && typeof response.result === "object" ? response.result as Record<string, unknown> : response;
+  return result.featureCollection && typeof result.featureCollection === "object" ? result.featureCollection as Record<string, unknown> : result;
+}
+
+export function normalizeVworldWfsFeatures(payload: unknown): VworldWfsFeature[] {
+  const collection = unwrapFeatureCollection(payload);
+  const features = Array.isArray(collection.features) ? collection.features : [];
+  return features.filter(feature => feature && typeof feature === "object").map(feature => {
+    const item = feature as Record<string, unknown>;
+    return { id: typeof item.id === "string" ? item.id : undefined, geometry: item.geometry, properties: item.properties && typeof item.properties === "object" ? item.properties as Record<string, unknown> : {} };
+  });
+}
+
+function contextBbox(latitude: number, longitude: number, radiusMeters: number) {
+  const safeRadius = Math.min(3000, Math.max(50, radiusMeters));
+  const latDelta = safeRadius / 111320;
+  const lngDelta = safeRadius / (111320 * Math.max(0.25, Math.cos(latitude * Math.PI / 180)));
+  return { west: longitude - lngDelta, south: latitude - latDelta, east: longitude + lngDelta, north: latitude + latDelta };
+}
 
 export function normalizeVworldBrowserCandidates(payload: unknown): VworldParcelCandidate[] {
   const root = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
@@ -25,6 +49,26 @@ export async function fetchVworldBrowserParcel(input: { key: string; latitude: n
   } catch (error) {
     const message = error instanceof Error ? error.message : "알 수 없는 오류";
     if (/Failed to fetch|NetworkError/i.test(message)) throw new Error("브라우저에서 VWorld 응답을 읽지 못했습니다. GitHub Pages 도메인을 VWorld 인증키의 허용 도메인으로 등록한 뒤 다시 시도하세요.");
+    throw new Error(message);
+  }
+}
+
+export async function fetchVworldWfs(input: { key: string; typename: string; latitude: number; longitude: number; radiusMeters: number; maxFeatures?: number }) {
+  if (!input.key.trim()) throw new Error("VWorld 인증키를 먼저 입력하세요.");
+  const bbox = contextBbox(input.latitude, input.longitude, input.radiusMeters);
+  const url = new URL("https://api.vworld.kr/req/wfs");
+  // VWorld WFS 1.1.0의 BBOX는 위도·경도 순서로 전달한다.
+  url.search = new URLSearchParams({ service: "WFS", version: "1.1.0", request: "GetFeature", key: input.key.trim(), typename: input.typename, output: "application/json", srsname: "EPSG:4326", bbox: `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`, maxfeatures: String(Math.min(1000, Math.max(1, input.maxFeatures ?? 1000))) }).toString();
+  try {
+    const response = await fetch(url, { headers: { Accept: "application/json" } });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(`VWorld WFS가 ${response.status} 상태로 응답했습니다.`);
+    const features = normalizeVworldWfsFeatures(payload);
+    if (!features.length && typeof payload === "object" && payload !== null && JSON.stringify(payload).match(/error|exception|fail/i)) throw new Error("VWorld WFS가 오류 응답을 반환했습니다.");
+    return { features, bbox, typename: input.typename };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "알 수 없는 오류";
+    if (/Failed to fetch|NetworkError/i.test(message)) throw new Error("브라우저에서 VWorld WFS 응답을 읽지 못했습니다. GitHub Pages 도메인과 VWorld 인증키 허용 설정을 확인하세요.");
     throw new Error(message);
   }
 }

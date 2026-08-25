@@ -2,7 +2,7 @@
 
 개인용 대지해석 작업대는 다음 GitHub Pages 주소로 배포되었습니다.
 
-> **서비스 주소:** `https://cjg10040.github.io/architecture-site-analysis-m/`
+> **서비스 주소:** `https://cjg10040.github.io/architecture-site-analysis-t/`
 
 VWorld 개발자센터에서 인증키를 신규 신청하거나 수정할 때, 서비스 URL 입력란에는 위 Pages 주소를 우선 사용한다. 입력란이 도메인만 받는 경우에는 `https://cjg10040.github.io`를 사용한다. 발급 화면의 형식 안내가 다르면 그 안내를 우선한다.
 

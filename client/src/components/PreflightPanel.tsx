@@ -18,7 +18,7 @@ export function PreflightPanel({ project, settings, onCollected }: { project: Lo
     setRunning(true); const notes: ResearchNote[] = [];
     for (const source of suggested.filter(item => selected.includes(item.id))) {
       if (!sourceAvailability(source, settings)) { setMessages(previous => ({ ...previous, [source.id]: "키 없음: 설정 화면에서 연결하세요." })); continue; }
-      try { const result = await collectSource(source, project.site, settings); notes.push(result); setMessages(previous => ({ ...previous, [source.id]: "수집 완료" })); }
+      try { const result = await collectSource(source, project.site, settings, project.studyRadiusMeters); notes.push(result); setMessages(previous => ({ ...previous, [source.id]: "수집 완료" })); }
       catch (error) { setMessages(previous => ({ ...previous, [source.id]: error instanceof Error ? error.message : "수집 실패" })); }
     }
     if (notes.length) { onCollected(notes); toast.success(`${notes.length}개 조사 근거를 저장했습니다.`); }

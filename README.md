@@ -13,7 +13,7 @@ GitHub Pages에서 동작하는 개인 학습·과제용 정적 브라우저 도
 ## GitHub Pages
 
 1. GitHub에서 이 저장소의 **Settings → Pages**를 열고 Source를 **GitHub Actions**로 선택합니다.
-2. `main` 브랜치에 push하면 `.github/workflows/deploy-pages.yml`이 정적 앱을 배포합니다.
+2. 현재 저장소의 기본 브랜치인 `github/workflows/deploy-pages.yml`에 push하면 Pages 배포 워크플로가 정적 앱을 배포합니다. 브랜치를 변경하거나 정리할 때는 GitHub 저장소의 실제 기본 브랜치를 먼저 확인하세요.
 3. 현재 배포 주소는 `https://cjg10040.github.io/architecture-site-analysis-t/`입니다.
 4. VWorld 개발자센터의 인증키 허용 도메인에는 `https://cjg10040.github.io`를 등록합니다. 입력란이 서비스 주소를 요구하면 전체 Pages 주소를 사용하며, 발급 화면의 안내를 우선합니다.
 
