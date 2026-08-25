@@ -2,7 +2,7 @@ name: Deploy personal static tool to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [github/workflows/deploy-pages.yml]
   workflow_dispatch:
 
 permissions:
