@@ -2,6 +2,7 @@ import type { LocalProject } from "./model";
 
 export type ResearchCatalogStatus = "implemented" | "partial" | "planned" | "field";
 export type ResearchCatalogPriority = "P0" | "P1" | "P2";
+export type ResearchScale = "macro" | "meso" | "site" | "micro";
 
 export type ResearchCatalogItem = {
   id: string;
@@ -16,6 +17,26 @@ export type ResearchCatalogItem = {
   limitation: string;
   officialUrl?: string;
 };
+
+export type ResearchTheme = { id: string; scale: ResearchScale; title: string; description: string; catalogIds: string[] };
+
+export const researchThemes: ResearchTheme[] = [
+  { id: "macro-region", scale: "macro", title: "거시 · 지역·도시 맥락", description: "행정·인구·산업·교통·문화·환경의 큰 흐름에서 대지가 어떤 지역 구조에 놓이는지 읽습니다.", catalogIds: ["population-households", "businesses", "transit", "culture-heritage", "hydrology", "imagery-change"] },
+  { id: "meso-life", scale: "meso", title: "중간 · 생활권·접근 구조", description: "도보권·생활시설·공원·도로·상권의 관계를 대지 주변 생활권으로 좁혀 읽습니다.", catalogIds: ["urban-parks", "transit", "businesses", "public-welfare", "roads", "air-quality", "noise"] },
+  { id: "site-form", scale: "site", title: "대지 · 필지·법규·형태", description: "선택한 필지와 주변 건축물·도로·용도지역·행위제한을 설계 가능한 대지 조건으로 좁혀 읽습니다.", catalogIds: ["site-boundary", "land-use-zoning", "land-regulation", "buildings", "roads", "hydrology"] },
+  { id: "micro-field", scale: "micro", title: "미시 · 현장·감각·접촉면", description: "출입구·경계·소리·빛·냄새·체류·회피처럼 데이터가 놓치기 쉬운 실제 경험을 기록합니다.", catalogIds: ["field-observation", "noise", "culture-heritage", "buildings", "site-boundary"] },
+];
+
+export function defaultResearchPlan() {
+  return { selectedThemeIds: researchThemes.map(theme => theme.id), selectedCatalogIds: Array.from(new Set(researchThemes.flatMap(theme => theme.catalogIds))).filter(id => researchCatalog.some(item => item.id === id && item.priority !== "P2")) };
+}
+
+export function catalogScale(itemId: string): ResearchScale {
+  if (researchThemes.find(theme => theme.scale === "macro")?.catalogIds.includes(itemId)) return "macro";
+  if (researchThemes.find(theme => theme.scale === "meso")?.catalogIds.includes(itemId)) return "meso";
+  if (researchThemes.find(theme => theme.scale === "site")?.catalogIds.includes(itemId)) return "site";
+  return "micro";
+}
 
 /**
  * 조사자료 카탈로그는 실제 API 연결 상태와 아직 조사·연결해야 할 자료를
@@ -64,13 +85,13 @@ export type GoalAlignment = {
 
 export function goalAlignment(project: LocalProject): GoalAlignment[] {
   const hasBoundary = project.site.boundary.length >= 3;
-  const hasParcel = Boolean(project.site.pnu);
+  const hasParcel = Boolean(project.site.pnu || project.site.parcels?.length);
   const hasLenses = project.lenses.length > 0;
   const hasEvidence = project.researchNotes.length > 0;
   const hasObservation = project.observations.length > 0;
   const hasDesignTurn = project.designNotes.length > 0;
   return [
-    { id: "site", title: "필지 확정과 대지 경계", status: hasBoundary && hasParcel ? "ready" : hasBoundary || hasParcel ? "partial" : "missing", detail: hasBoundary && hasParcel ? "사용자 경계와 PNU 필지 후보가 모두 있습니다." : hasBoundary ? "경계는 있지만 공식 필지 후보 확인이 남았습니다." : "지도에서 3개 이상의 경계점을 만들고 필지 후보를 확인하세요." },
+    { id: "site", title: "필지 확정과 대지 경계", status: hasBoundary && hasParcel ? "ready" : hasBoundary || hasParcel ? "partial" : "missing", detail: hasBoundary && hasParcel ? "사용자 경계와 공식 필지 후보 또는 필지 묶음이 모두 있습니다." : hasBoundary ? "경계는 있지만 공식 필지 후보 확인이 남았습니다." : "지도에서 3개 이상의 경계점을 만들고 필지 후보를 확인하세요." },
     { id: "brief", title: "조사 주제와 범위", status: hasLenses ? "ready" : "missing", detail: hasLenses ? `${project.lenses.length}개 조사 렌즈가 선택되었습니다.` : "조사 렌즈를 선택해야 필요한 자료를 추천할 수 있습니다." },
     { id: "collection", title: "출처가 있는 자료 수집", status: hasEvidence ? "ready" : "missing", detail: hasEvidence ? `${project.researchNotes.length}개 조사 근거가 저장되었습니다.` : "자동 수집 또는 원본 파일·수동 근거를 하나 이상 추가하세요." },
     { id: "spatial", title: "공간 관계 분석", status: hasEvidence && hasBoundary ? "partial" : "missing", detail: hasEvidence && hasBoundary ? "대지와 근거를 함께 보유했지만 거리·중첩·밀도 분석을 계속 보강해야 합니다." : "확정 경계와 위치가 있는 공간자료가 필요합니다." },

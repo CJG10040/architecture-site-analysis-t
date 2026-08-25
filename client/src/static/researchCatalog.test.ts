@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { createLocalProject } from "./model";
-import { goalAlignment, researchCatalog } from "./researchCatalog";
+import { defaultResearchPlan, goalAlignment, researchCatalog, researchThemes } from "./researchCatalog";
 
 describe("research catalog", () => {
   it("keeps planned data separate from currently implemented data", () => {
     expect(researchCatalog.some(item => item.id === "buildings" && item.status === "partial")).toBe(true);
     expect(researchCatalog.some(item => item.id === "field-observation" && item.status === "implemented")).toBe(true);
+  });
+
+  it("provides a default macro-to-micro plan without requiring manual source discovery", () => {
+    const plan = defaultResearchPlan();
+    expect(researchThemes.map(theme => theme.scale)).toEqual(["macro", "meso", "site", "micro"]);
+    expect(plan.selectedThemeIds).toHaveLength(4);
+    expect(plan.selectedCatalogIds).toContain("population-households");
+    expect(plan.selectedCatalogIds).toContain("land-use-zoning");
+    expect(plan.selectedCatalogIds).toContain("field-observation");
   });
 
   it("checks the original investigation sequence from project evidence", () => {

@@ -6,11 +6,13 @@ export type SiteParcel = { featureId?: string; pnu?: string; parcelNumber?: stri
 export type SiteGeoJson = { type: "Polygon"; coordinates: number[][][] } | { type: "MultiPolygon"; coordinates: number[][][][] };
 export type SiteRecord = { address: string; latitude: number; longitude: number; boundary: BoundaryPoint[]; areaSqm?: number; perimeterMeters?: number; geoJson?: SiteGeoJson; parcels?: SiteParcel[]; pnu?: string; parcelLabel?: string };
 export type Observation = { id: string; title: string; note: string; category: string; createdAt: string };
-export type ResearchNote = { id: string; source: string; title: string; summary: string; url?: string; latitude?: number; longitude?: number; spatialLayer?: SpatialLayer; createdAt: string };
+export type ResearchNote = { id: string; source: string; title: string; summary: string; url?: string; latitude?: number; longitude?: number; catalogId?: string; detail?: string; rawData?: string; rawDataTruncated?: boolean; spatialLayer?: SpatialLayer; createdAt: string };
 export type MapOverlay = { id: string; source: string; title: string; summary: string; latitude: number; longitude: number; kind: "research" | "file" };
 export type SpatialFeature = { id: string; geometry: SpatialGeometry; properties: Record<string, unknown> };
 export type SpatialLayer = { id: string; title: string; source: string; fetchedAt: string; features: SpatialFeature[]; totalFeatureCount: number; truncated: boolean };
 export type DesignNote = { id: string; question: string; evidence: string; spatialIdea: string; createdAt: string };
+
+export type ResearchPlan = { selectedThemeIds: string[]; selectedCatalogIds: string[] };
 
 export type LocalProject = {
   schemaVersion: 1;
@@ -18,6 +20,7 @@ export type LocalProject = {
   title: string;
   lenses: string[];
   site: SiteRecord;
+  researchPlan?: ResearchPlan;
   observations: Observation[];
   researchNotes: ResearchNote[];
   studyRadiusMeters: number;
