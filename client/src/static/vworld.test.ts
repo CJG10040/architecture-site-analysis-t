@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { candidateBoundary, fetchVworldBrowserParcel, fetchVworldWfs, normalizeVworldBrowserCandidates, normalizeVworldKey, normalizeVworldWfsFeatures, parcelCandidateKey } from "./vworld";
+import { candidateBoundary, fetchVworldBrowserParcel, fetchVworldWfs, normalizeVworldBrowserCandidates, normalizeVworldKey, normalizeVworldWfsFeatures, parcelCandidateKey, parcelIntersectsBoundary } from "./vworld";
 
 describe("normalizeVworldKey", () => {
   it("removes copied wrapping quotes and whitespace without exposing the key", () => {
@@ -13,6 +13,8 @@ describe("normalizeVworldBrowserCandidates", () => {
     expect(candidates[0]).toMatchObject({ featureId: "parcel.1", pnu: "2911010100100010000", parcelNumber: "1-1", landCategory: "대", areaSqm: "121.5" });
     expect(parcelCandidateKey(candidates[0])).toBe("2911010100100010000");
     expect(candidateBoundary(candidates[0])).toHaveLength(3);
+    expect(parcelIntersectsBoundary(candidates[0], [{ lat: 35.1005, lng: 126.9005 }, { lat: 35.1005, lng: 126.9015 }, { lat: 35.1015, lng: 126.9015 }, { lat: 35.1015, lng: 126.9005 }])).toBe(true);
+    expect(parcelIntersectsBoundary(candidates[0], [{ lat: 35.102, lng: 126.902 }, { lat: 35.102, lng: 126.903 }, { lat: 35.103, lng: 126.903 }, { lat: 35.103, lng: 126.902 }])).toBe(false);
   });
 });
 

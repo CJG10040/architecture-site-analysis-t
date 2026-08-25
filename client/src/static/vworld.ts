@@ -4,6 +4,17 @@ export type VworldParcelCandidate = { featureId?: string; pnu?: string; parcelNu
 
 export function parcelCandidateKey(candidate: VworldParcelCandidate) { return candidate.pnu || candidate.featureId || `${candidate.parcelNumber ?? "parcel"}-${candidate.landCategory ?? "unknown"}`; }
 
+export function parcelGroupGeoJson(candidates: VworldParcelCandidate[]) {
+  const polygons = candidates.flatMap(candidate => {
+    const geometry = candidate.geometry;
+    if (!geometry || !Array.isArray(geometry.coordinates)) return [];
+    if (geometry.type === "Polygon") return [geometry.coordinates as number[][][]];
+    if (geometry.type === "MultiPolygon") return geometry.coordinates as number[][][][];
+    return [];
+  });
+  return polygons.length ? { type: "MultiPolygon" as const, coordinates: polygons } : undefined;
+}
+
 function normalizeCoordinates(value: unknown): unknown {
   if (!Array.isArray(value)) return value;
   if (value.length >= 2 && !Array.isArray(value[0]) && !Array.isArray(value[1])) {
@@ -26,13 +37,51 @@ function normalizeGeometry(value: unknown): SpatialGeometry | undefined {
   return { ...geometry, coordinates: geometry.coordinates === undefined ? undefined : normalizeCoordinates(geometry.coordinates) } as SpatialGeometry;
 }
 
+type LngLat = [number, number];
+
+function geometryRings(geometry?: SpatialGeometry): LngLat[][] {
+  if (!geometry || !Array.isArray(geometry.coordinates)) return [];
+  const polygons = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.type === "MultiPolygon" ? geometry.coordinates : [];
+  return polygons.flatMap(polygon => Array.isArray(polygon) ? polygon.slice(0, 1).map(ring => Array.isArray(ring) ? ring.map(pair => Array.isArray(pair) && pair.length >= 2 ? [Number(pair[0]), Number(pair[1])] as LngLat : null).filter((pair): pair is LngLat => pair !== null && Number.isFinite(pair[0]) && Number.isFinite(pair[1])) : []) : []);
+}
+
 export function candidateBoundary(candidate: VworldParcelCandidate): BoundaryPoint[] {
-  const geometry = candidate.geometry;
-  const coordinates = geometry?.coordinates;
-  const ring = geometry?.type === "Polygon" && Array.isArray(coordinates) ? coordinates[0] : geometry?.type === "MultiPolygon" && Array.isArray(coordinates) ? coordinates[0]?.[0] : [];
-  const points = Array.isArray(ring) ? ring.map(pair => Array.isArray(pair) && pair.length >= 2 ? { lat: Number(pair[1]), lng: Number(pair[0]) } : null).filter((point): point is BoundaryPoint => point !== null && Number.isFinite(point.lat) && Number.isFinite(point.lng)) : [];
+  const ring = geometryRings(candidate.geometry)[0] ?? [];
+  const points = ring.map(pair => ({ lat: pair[1], lng: pair[0] }));
   const first = points[0]; const last = points[points.length - 1];
   return first && last && first.lat === last.lat && first.lng === last.lng ? points.slice(0, -1) : points;
+}
+
+function pointInRing(point: LngLat, ring: LngLat[]) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]; const [xj, yj] = ring[j];
+    const crosses = (yi > point[1]) !== (yj > point[1]) && point[0] < (xj - xi) * (point[1] - yi) / ((yj - yi) || Number.EPSILON) + xi;
+    if (crosses) inside = !inside;
+  }
+  return inside;
+}
+
+function segmentsIntersect(a: LngLat, b: LngLat, c: LngLat, d: LngLat) {
+  const cross = (p: LngLat, q: LngLat, r: LngLat) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  const ab = cross(a, b, c); const ab2 = cross(a, b, d); const cd = cross(c, d, a); const cd2 = cross(c, d, b);
+  const onSegment = (p: LngLat, q: LngLat, r: LngLat) => Math.min(p[0], r[0]) <= q[0] && q[0] <= Math.max(p[0], r[0]) && Math.min(p[1], r[1]) <= q[1] && q[1] <= Math.max(p[1], r[1]);
+  const epsilon = 1e-12;
+  return (ab * ab2 < -epsilon && cd * cd2 < -epsilon) || (Math.abs(ab) <= epsilon && onSegment(a, c, b)) || (Math.abs(ab2) <= epsilon && onSegment(a, d, b)) || (Math.abs(cd) <= epsilon && onSegment(c, a, d)) || (Math.abs(cd2) <= epsilon && onSegment(c, b, d));
+}
+
+export function parcelIntersectsBoundary(candidate: VworldParcelCandidate, boundary: BoundaryPoint[]) {
+  if (boundary.length < 3) return true;
+  const target = boundary.map(point => [point.lng, point.lat] as LngLat);
+  return geometryRings(candidate.geometry).some(ring => {
+    if (ring.length < 3) return false;
+    if (ring.some(point => pointInRing(point, target)) || target.some(point => pointInRing(point, ring))) return true;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i]; const b = ring[(i + 1) % ring.length];
+      for (let j = 0; j < target.length; j++) if (segmentsIntersect(a, b, target[j], target[(j + 1) % target.length])) return true;
+    }
+    return false;
+  });
 }
 export type VworldWfsFeature = { id?: string; geometry?: SpatialGeometry; properties: Record<string, unknown> };
 
@@ -137,10 +186,11 @@ export function normalizeVworldBrowserCandidates(payload: unknown): VworldParcel
   });
 }
 
-export async function fetchVworldBrowserParcel(input: { key: string; latitude: number; longitude: number; radiusMeters?: number; domain?: string }) {
+export async function fetchVworldBrowserParcel(input: { key: string; latitude: number; longitude: number; radiusMeters?: number; boundary?: BoundaryPoint[]; domain?: string }) {
   const key = normalizeVworldKey(input.key);
   if (!key) throw new Error("VWorld 인증키를 먼저 입력하세요.");
-  const bbox = input.radiusMeters ? contextBbox(input.latitude, input.longitude, input.radiusMeters) : undefined;
+  const boundary = input.boundary && input.boundary.length >= 3 ? input.boundary : undefined;
+  const bbox = boundary ? { west: Math.min(...boundary.map(point => point.lng)), south: Math.min(...boundary.map(point => point.lat)), east: Math.max(...boundary.map(point => point.lng)), north: Math.max(...boundary.map(point => point.lat)) } : input.radiusMeters ? contextBbox(input.latitude, input.longitude, input.radiusMeters) : undefined;
   const geomFilter = bbox ? `BOX(${bbox.west},${bbox.south},${bbox.east},${bbox.north})` : `POINT(${input.longitude} ${input.latitude})`;
   const url = new URL("https://api.vworld.kr/req/data");
   url.search = new URLSearchParams({ service: "data", version: "2.0", request: "GetFeature", data: "LP_PA_CBND_BUBUN", format: "json", errorformat: "json", crs: "EPSG:4326", geometry: "true", attribute: "true", key, domain: requestDomain(input.domain), geomFilter, size: bbox ? "200" : "12" }).toString();
@@ -148,7 +198,8 @@ export async function fetchVworldBrowserParcel(input: { key: string; latitude: n
     const body = await jsonp(url.toString());
     const apiError = apiErrorMessage(body);
     if (apiError) throw new Error(apiError);
-    return normalizeVworldBrowserCandidates(body);
+    const candidates = normalizeVworldBrowserCandidates(body);
+    return boundary ? candidates.filter(candidate => parcelIntersectsBoundary(candidate, boundary)) : candidates;
   } catch (error) {
     const message = error instanceof Error ? error.message : "알 수 없는 오류";
     if (/Failed to fetch|NetworkError/i.test(message)) throw new Error("브라우저에서 VWorld 응답을 읽지 못했습니다. GitHub Pages 도메인을 VWorld 인증키의 허용 도메인으로 등록한 뒤 다시 시도하세요.");

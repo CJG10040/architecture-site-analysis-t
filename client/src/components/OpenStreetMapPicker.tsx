@@ -17,8 +17,9 @@ type Props = {
   overlays: MapOverlay[];
   spatialLayers: SpatialLayer[];
   parcelCandidates: VworldParcelCandidate[];
-  selectedParcelKey: string;
-  onParcelSelect: (candidate: VworldParcelCandidate) => void;
+  confirmedParcels: VworldParcelCandidate[];
+  selectedParcelKeys: string[];
+  onParcelToggle: (candidate: VworldParcelCandidate) => void;
   onSiteChange: (change: { latitude?: number; longitude?: number; address?: string }) => void;
   onBoundaryChange: (boundary: BoundaryPoint[]) => void;
 };
@@ -28,10 +29,10 @@ let lastNominatimRequestAt = 0;
 
 const vertexIcon = L.divIcon({ className: "site-boundary-vertex", iconSize: [18, 18], iconAnchor: [9, 9] });
 
-export function OpenStreetMapPicker({ latitude, longitude, address, boundary, radiusMeters, overlays, spatialLayers, parcelCandidates, selectedParcelKey, onParcelSelect, onSiteChange, onBoundaryChange }: Props) {
+export function OpenStreetMapPicker({ latitude, longitude, address, boundary, radiusMeters, overlays, spatialLayers, parcelCandidates, confirmedParcels, selectedParcelKeys, onParcelToggle, onSiteChange, onBoundaryChange }: Props) {
   const mapElement = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const onParcelSelectRef = useRef(onParcelSelect);
+  const onParcelToggleRef = useRef(onParcelToggle);
   const boundaryRef = useRef(boundary);
   const drawingRef = useRef(false);
   const onSiteChangeRef = useRef(onSiteChange);
@@ -42,7 +43,7 @@ export function OpenStreetMapPicker({ latitude, longitude, address, boundary, ra
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
 
   useEffect(() => { boundaryRef.current = boundary; }, [boundary]);
-  useEffect(() => { onParcelSelectRef.current = onParcelSelect; }, [onParcelSelect]);
+  useEffect(() => { onParcelToggleRef.current = onParcelToggle; }, [onParcelToggle]);
   useEffect(() => { drawingRef.current = drawing; }, [drawing]);
   useEffect(() => { onSiteChangeRef.current = onSiteChange; }, [onSiteChange]);
   useEffect(() => { onBoundaryChangeRef.current = onBoundaryChange; }, [onBoundaryChange]);
@@ -108,15 +109,16 @@ export function OpenStreetMapPicker({ latitude, longitude, address, boundary, ra
     const map = mapRef.current;
     if (!map) return;
     const layer = L.layerGroup().addTo(map);
-    parcelCandidates.forEach(candidate => {
+    const visibleCandidates = [...confirmedParcels, ...parcelCandidates].filter((candidate, index, list) => list.findIndex(item => parcelCandidateKey(item) === parcelCandidateKey(candidate)) === index);
+    visibleCandidates.forEach(candidate => {
       if (!candidate.geometry) return;
-      const selected = parcelCandidateKey(candidate) === selectedParcelKey;
+      const selected = confirmedParcels.some(item => parcelCandidateKey(item) === parcelCandidateKey(candidate)) || selectedParcelKeys.includes(parcelCandidateKey(candidate));
       const color = selected ? "#d87939" : "#2f7d73";
       const data = { type: "Feature", id: candidate.featureId, geometry: candidate.geometry, properties: candidate.properties ?? {} } as GeoJSON.Feature;
-      L.geoJSON(data, { style: { color, weight: selected ? 3 : 1, opacity: .95, fillColor: color, fillOpacity: selected ? .3 : .06 }, onEachFeature: (_feature, featureLayer) => featureLayer.on("click", event => { L.DomEvent.stopPropagation(event); onParcelSelectRef.current(candidate); }).bindTooltip(`${candidate.parcelNumber ?? "지번 미확인"} · ${candidate.areaSqm ?? "면적 미확인"}㎡`) }).addTo(layer);
+      L.geoJSON(data, { style: { color, weight: selected ? 3 : 1, opacity: .95, fillColor: color, fillOpacity: selected ? .3 : .06 }, onEachFeature: (_feature, featureLayer) => featureLayer.on("click", event => { L.DomEvent.stopPropagation(event); onParcelToggleRef.current(candidate); }).bindTooltip(`${candidate.parcelNumber ?? "지번 미확인"} · ${candidate.areaSqm ?? "면적 미확인"}㎡`) }).addTo(layer);
     });
     return () => { layer.remove(); };
-  }, [parcelCandidates, selectedParcelKey]);
+  }, [parcelCandidates, confirmedParcels, selectedParcelKeys]);
 
   const applySearchResult = (result: SearchResult) => {
     mapRef.current?.setView([result.lat, result.lng], 18);
