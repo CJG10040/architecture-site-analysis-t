@@ -26,7 +26,7 @@ export type LocalProject = {
   updatedAt: string;
 };
 
-export type PublicServiceSettings = { naverMapsClientId?: string; vworldKey: string; dataGoKrKey: string; sgisClientId?: string; sgisClientSecret?: string; sgisKey?: string };
+export type PublicServiceSettings = { naverMapsClientId?: string; vworldKey: string; vworldDomain?: string; dataGoKrKey: string; sgisClientId?: string; sgisClientSecret?: string; sgisKey?: string };
 export type StoredWorkspace = { schemaVersion: 1; activeProjectId: string | null; projects: LocalProject[] };
 
 export const workspaceStorageKey = "site-study-static-workspace-v1";

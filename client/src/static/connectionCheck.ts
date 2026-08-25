@@ -10,7 +10,7 @@ const failure = (message: string): ConnectionResult => ({ status: "error", messa
 export function classifyBrowserError(cause: unknown): ConnectionResult {
   const message = cause instanceof Error ? cause.message : "알 수 없는 오류";
   if (/Failed to fetch|NetworkError|CORS/i.test(message)) return { status: "cors", message: "브라우저 요청이 차단되었습니다. Pages 도메인 등록 또는 원본 파일 불러오기를 사용하세요.", checkedAt: new Date().toISOString() };
-  if (/401|403|승인|approval|등록/i.test(message)) return { status: "approval", message: "키·도메인 등록·활용 승인을 확인하세요.", checkedAt: new Date().toISOString() };
+  if (/401|403|승인|approval|등록|INCORRECT_KEY|INVALID_KEY|UNAVAILABLE_KEY|인증키|도메인/i.test(message)) return { status: "approval", message: `키·도메인 등록·활용 승인을 확인하세요. 원문: ${message}`, checkedAt: new Date().toISOString() };
   return failure(message);
 }
 
@@ -22,7 +22,7 @@ export async function checkPublicService(service: "naverMaps" | "vworld" | "data
     }
     if (service === "vworld") {
       if (!settings.vworldKey) return { status: "missing", message: "VWorld 인증키가 없습니다." };
-      await fetchVworldBrowserParcel({ key: settings.vworldKey, latitude: 35.1467, longitude: 126.921 }); return success("VWorld 필지 후보 응답을 확인했습니다.");
+      await fetchVworldBrowserParcel({ key: settings.vworldKey, domain: settings.vworldDomain, latitude: 35.1467, longitude: 126.921 }); return success("VWorld 필지 후보 응답을 확인했습니다.");
     }
     if (service === "dataGoKr") {
       if (!settings.dataGoKrKey) return { status: "missing", message: "공공데이터포털 ServiceKey가 없습니다." };

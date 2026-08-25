@@ -31,13 +31,13 @@ export async function collectSource(source: SourceDefinition, site: SiteRecord, 
     return note(source.source, source.title, `대지 중심 격자 표본: PM10 ${current.pm10 ?? "미확인"} μg/m³, PM2.5 ${current.pm2_5 ?? "미확인"} μg/m³, NO₂ ${current.nitrogen_dioxide ?? "미확인"} μg/m³. ${source.limitation}`, "https://open-meteo.com/en/docs/air-quality-api", site);
   }
   if (source.id === "vworldParcel") {
-    const candidates = await fetchVworldBrowserParcel({ key: settings.vworldKey, latitude: site.latitude, longitude: site.longitude });
+    const candidates = await fetchVworldBrowserParcel({ key: settings.vworldKey, domain: settings.vworldDomain, latitude: site.latitude, longitude: site.longitude });
     const first = candidates[0]; if (!first) throw new Error("현재 중심점의 VWorld 필지 후보를 찾지 못했습니다.");
     return note(source.source, source.title, `PNU ${first.pnu ?? "미확인"}, 지번 ${first.parcelNumber ?? "미확인"}, 지목 ${first.landCategory ?? "미확인"}, 면적 ${first.areaSqm ? `${first.areaSqm}㎡` : "미확인"}. ${source.limitation}`, "https://www.vworld.kr/");
   }
   if (source.id === "vworldBuildings" || source.id === "vworldRoads") {
     const typename = source.id === "vworldBuildings" ? "lt_c_spbd" : "lt_l_moctlink";
-    const result = await fetchVworldWfs({ key: settings.vworldKey, typename, latitude: site.latitude, longitude: site.longitude, radiusMeters: siteRadius(radiusMeters) });
+    const result = await fetchVworldWfs({ key: settings.vworldKey, domain: settings.vworldDomain, typename, latitude: site.latitude, longitude: site.longitude, radiusMeters: siteRadius(radiusMeters) });
     const propertyNames = Array.from(new Set(result.features.flatMap(feature => Object.keys(feature.properties)))).slice(0, 8).join(", ");
     const spatialFeatures = result.features.filter(feature => feature.geometry).slice(0, 300).map((feature, index) => ({ id: feature.id ?? `${source.id}-${index + 1}`, geometry: feature.geometry!, properties: feature.properties }));
     const record = note(source.source, source.title, `조사 반경 ${siteRadius(radiusMeters)}m 내 WFS 객체 ${result.features.length.toLocaleString("ko-KR")}개. 지도에는 공간자료 ${spatialFeatures.length.toLocaleString("ko-KR")}개를 표시합니다. 속성 표본: ${propertyNames || "응답 속성 없음"}. ${source.limitation}`, source.id === "vworldBuildings" ? "https://www.data.go.kr/data/15123458/openapi.do" : "https://www.its.go.kr/nodelink/", { latitude: site.latitude, longitude: site.longitude });
