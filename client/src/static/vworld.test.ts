@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchVworldBrowserParcel, fetchVworldWfs, normalizeVworldBrowserCandidates, normalizeVworldKey, normalizeVworldWfsFeatures } from "./vworld";
+import { candidateBoundary, fetchVworldBrowserParcel, fetchVworldWfs, normalizeVworldBrowserCandidates, normalizeVworldKey, normalizeVworldWfsFeatures, parcelCandidateKey } from "./vworld";
 
 describe("normalizeVworldKey", () => {
   it("removes copied wrapping quotes and whitespace without exposing the key", () => {
@@ -9,8 +9,10 @@ describe("normalizeVworldKey", () => {
 
 describe("normalizeVworldBrowserCandidates", () => {
   it("reads parcel metadata without preserving a browser key", () => {
-    const candidates = normalizeVworldBrowserCandidates({ response: { result: { featureCollection: { features: [{ properties: { pnu: "2911010100100010000", jibun: "1-1", jimok: "대", area: 121.5 } }] } } } });
-    expect(candidates).toEqual([{ pnu: "2911010100100010000", parcelNumber: "1-1", landCategory: "대", areaSqm: "121.5" }]);
+    const candidates = normalizeVworldBrowserCandidates({ response: { result: { featureCollection: { features: [{ id: "parcel.1", geometry: { type: "Polygon", coordinates: [[[126.9, 35.1], [126.901, 35.1], [126.901, 35.101], [126.9, 35.1]]] }, properties: { pnu: "2911010100100010000", jibun: "1-1", jimok: "대", area: 121.5 } }] } } } });
+    expect(candidates[0]).toMatchObject({ featureId: "parcel.1", pnu: "2911010100100010000", parcelNumber: "1-1", landCategory: "대", areaSqm: "121.5" });
+    expect(parcelCandidateKey(candidates[0])).toBe("2911010100100010000");
+    expect(candidateBoundary(candidates[0])).toHaveLength(3);
   });
 });
 

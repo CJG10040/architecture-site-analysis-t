@@ -1,6 +1,17 @@
-import type { SpatialGeometry } from "./model";
+import type { BoundaryPoint, SpatialGeometry } from "./model";
 
-export type VworldParcelCandidate = { pnu?: string; parcelNumber?: string; landCategory?: string; areaSqm?: string };
+export type VworldParcelCandidate = { featureId?: string; pnu?: string; parcelNumber?: string; landCategory?: string; areaSqm?: string; geometry?: SpatialGeometry; properties?: Record<string, unknown> };
+
+export function parcelCandidateKey(candidate: VworldParcelCandidate) { return candidate.pnu || candidate.featureId || `${candidate.parcelNumber ?? "parcel"}-${candidate.landCategory ?? "unknown"}`; }
+
+export function candidateBoundary(candidate: VworldParcelCandidate): BoundaryPoint[] {
+  const geometry = candidate.geometry;
+  const coordinates = geometry?.coordinates;
+  const ring = geometry?.type === "Polygon" && Array.isArray(coordinates) ? coordinates[0] : geometry?.type === "MultiPolygon" && Array.isArray(coordinates) ? coordinates[0]?.[0] : [];
+  const points = Array.isArray(ring) ? ring.map(pair => Array.isArray(pair) && pair.length >= 2 ? { lat: Number(pair[1]), lng: Number(pair[0]) } : null).filter((point): point is BoundaryPoint => point !== null && Number.isFinite(point.lat) && Number.isFinite(point.lng)) : [];
+  const first = points[0]; const last = points[points.length - 1];
+  return first && last && first.lat === last.lat && first.lng === last.lng ? points.slice(0, -1) : points;
+}
 export type VworldWfsFeature = { id?: string; geometry?: SpatialGeometry; properties: Record<string, unknown> };
 
 export function normalizeVworldKey(value: string) {
@@ -96,17 +107,21 @@ export function normalizeVworldBrowserCandidates(payload: unknown): VworldParcel
   const collection = result.featureCollection && typeof result.featureCollection === "object" ? result.featureCollection as Record<string, unknown> : result;
   const features = Array.isArray(collection.features) ? collection.features : [];
   return features.map(feature => {
-    const properties = feature && typeof feature === "object" && (feature as Record<string, unknown>).properties && typeof (feature as Record<string, unknown>).properties === "object" ? (feature as Record<string, unknown>).properties as Record<string, unknown> : {};
+    const item = feature && typeof feature === "object" ? feature as Record<string, unknown> : {};
+    const properties = item.properties && typeof item.properties === "object" ? item.properties as Record<string, unknown> : {};
     const get = (...keys: string[]) => keys.map(key => properties[key]).find(value => value !== undefined && value !== null && String(value).trim() !== "");
-    return { pnu: get("pnu", "PNU", "pnu_cd") ? String(get("pnu", "PNU", "pnu_cd")) : undefined, parcelNumber: get("jibun", "JIBUN", "jibun_nm") ? String(get("jibun", "JIBUN", "jibun_nm")) : undefined, landCategory: get("jimok", "JIMOK", "lndcgr") ? String(get("jimok", "JIMOK", "lndcgr")) : undefined, areaSqm: get("area", "AREA", "pcl_area") ? String(get("area", "AREA", "pcl_area")) : undefined };
+    const geometry = item.geometry && typeof item.geometry === "object" && typeof (item.geometry as Record<string, unknown>).type === "string" ? item.geometry as SpatialGeometry : undefined;
+    return { featureId: typeof item.id === "string" ? item.id : undefined, pnu: get("pnu", "PNU", "pnu_cd") ? String(get("pnu", "PNU", "pnu_cd")) : undefined, parcelNumber: get("jibun", "JIBUN", "jibun_nm") ? String(get("jibun", "JIBUN", "jibun_nm")) : undefined, landCategory: get("jimok", "JIMOK", "lndcgr") ? String(get("jimok", "JIMOK", "lndcgr")) : undefined, areaSqm: get("area", "AREA", "pcl_area") ? String(get("area", "AREA", "pcl_area")) : undefined, geometry, properties };
   });
 }
 
-export async function fetchVworldBrowserParcel(input: { key: string; latitude: number; longitude: number; domain?: string }) {
+export async function fetchVworldBrowserParcel(input: { key: string; latitude: number; longitude: number; radiusMeters?: number; domain?: string }) {
   const key = normalizeVworldKey(input.key);
   if (!key) throw new Error("VWorld 인증키를 먼저 입력하세요.");
+  const bbox = input.radiusMeters ? contextBbox(input.latitude, input.longitude, input.radiusMeters) : undefined;
+  const geomFilter = bbox ? `BOX(${bbox.west},${bbox.south},${bbox.east},${bbox.north})` : `POINT(${input.longitude} ${input.latitude})`;
   const url = new URL("https://api.vworld.kr/req/data");
-  url.search = new URLSearchParams({ service: "data", version: "2.0", request: "GetFeature", data: "LP_PA_CBND_BUBUN", format: "json", errorformat: "json", crs: "EPSG:4326", geometry: "true", attribute: "true", key, domain: requestDomain(input.domain), geomFilter: `POINT(${input.longitude} ${input.latitude})`, size: "12" }).toString();
+  url.search = new URLSearchParams({ service: "data", version: "2.0", request: "GetFeature", data: "LP_PA_CBND_BUBUN", format: "json", errorformat: "json", crs: "EPSG:4326", geometry: "true", attribute: "true", key, domain: requestDomain(input.domain), geomFilter, size: bbox ? "200" : "12" }).toString();
   try {
     const body = await jsonp(url.toString());
     const apiError = apiErrorMessage(body);

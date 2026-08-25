@@ -3,6 +3,7 @@ import { LocateFixed, MapPin, PencilLine, RotateCcw, Search, Trash2 } from "luci
 import { Button } from "@/components/ui/button";
 import type { BoundaryPoint, MapOverlay, SpatialLayer } from "@/static/model";
 import { loadNaverMaps } from "@/static/naverMaps";
+import { parcelCandidateKey, type VworldParcelCandidate } from "@/static/vworld";
 
 type Props = {
   clientId: string;
@@ -13,6 +14,9 @@ type Props = {
   radiusMeters: number;
   overlays: MapOverlay[];
   spatialLayers: SpatialLayer[];
+  parcelCandidates: VworldParcelCandidate[];
+  selectedParcelKey: string;
+  onParcelSelect: (candidate: VworldParcelCandidate) => void;
   onSiteChange: (change: { latitude?: number; longitude?: number; address?: string }) => void;
   onBoundaryChange: (boundary: BoundaryPoint[]) => void;
   onOpenSettings: () => void;
@@ -21,13 +25,15 @@ type Props = {
 
 const asPoint = (latLng: any): BoundaryPoint => ({ lat: latLng.lat(), lng: latLng.lng() });
 
-export function SiteMapPicker({ clientId, latitude, longitude, address, boundary, radiusMeters, overlays, spatialLayers, onSiteChange, onBoundaryChange, onOpenSettings, onSwitchToOpenStreetMap }: Props) {
+export function SiteMapPicker({ clientId, latitude, longitude, address, boundary, radiusMeters, overlays, spatialLayers, parcelCandidates, selectedParcelKey, onParcelSelect, onSiteChange, onBoundaryChange, onOpenSettings, onSwitchToOpenStreetMap }: Props) {
   const mapElement = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const boundaryObjectRef = useRef<any>(null);
   const boundaryMarkersRef = useRef<any[]>([]);
   const overlayObjectsRef = useRef<any[]>([]);
   const spatialObjectsRef = useRef<any[]>([]);
+  const parcelObjectsRef = useRef<any[]>([]);
+  const onParcelSelectRef = useRef(onParcelSelect);
   const boundaryRef = useRef(boundary);
   const drawingRef = useRef(false);
   const onSiteChangeRef = useRef(onSiteChange);
@@ -41,6 +47,7 @@ export function SiteMapPicker({ clientId, latitude, longitude, address, boundary
   useEffect(() => { drawingRef.current = drawing; }, [drawing]);
   useEffect(() => { onSiteChangeRef.current = onSiteChange; }, [onSiteChange]);
   useEffect(() => { onBoundaryChangeRef.current = onBoundaryChange; }, [onBoundaryChange]);
+  useEffect(() => { onParcelSelectRef.current = onParcelSelect; }, [onParcelSelect]);
   useEffect(() => { setQuery(address); }, [address]);
 
   useEffect(() => {
@@ -123,6 +130,31 @@ export function SiteMapPicker({ clientId, latitude, longitude, address, boundary
     spatialObjectsRef.current = objects;
     return () => spatialObjectsRef.current.forEach(item => item.setMap?.(null));
   }, [spatialLayers, status]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const naver = (window as any).naver;
+    if (!map || !naver?.maps) return;
+    parcelObjectsRef.current.forEach(item => item.setMap?.(null));
+    const objects: any[] = [];
+    const toPath = (coordinates: unknown) => Array.isArray(coordinates) ? coordinates.filter(item => Array.isArray(item) && item.length >= 2 && Number.isFinite(Number(item[0])) && Number.isFinite(Number(item[1]))).map(item => new naver.maps.LatLng(Number(item[1]), Number(item[0]))) : [];
+    parcelCandidates.forEach(candidate => {
+      const geometry = candidate.geometry;
+      if (!geometry || (geometry.type !== "Polygon" && geometry.type !== "MultiPolygon")) return;
+      const selected = parcelCandidateKey(candidate) === selectedParcelKey;
+      const color = selected ? "#d87939" : "#2f7d73";
+      const paths = geometry.type === "Polygon" && Array.isArray(geometry.coordinates)
+        ? geometry.coordinates.map((ring: unknown) => toPath(ring))
+        : geometry.type === "MultiPolygon" && Array.isArray(geometry.coordinates)
+          ? geometry.coordinates.flatMap(polygon => Array.isArray(polygon) ? [polygon.map((ring: unknown) => toPath(ring))] : [])
+          : [];
+      const shape = new naver.maps.Polygon({ map, paths, strokeColor: color, strokeOpacity: .95, strokeWeight: selected ? 3 : 1, fillColor: color, fillOpacity: selected ? .32 : .08, clickable: true });
+      naver.maps.Event.addListener(shape, "click", (event: any) => { event?.domEvent?.stopPropagation?.(); onParcelSelectRef.current(candidate); });
+      objects.push(shape);
+    });
+    parcelObjectsRef.current = objects;
+    return () => parcelObjectsRef.current.forEach(item => item.setMap?.(null));
+  }, [parcelCandidates, selectedParcelKey, status]);
 
   const searchAddress = () => {
     const naver = (window as any).naver;
