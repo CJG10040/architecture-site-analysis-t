@@ -118,7 +118,7 @@ export function SiteMapPicker({ clientId, latitude, longitude, address, boundary
     if (!map || !naver?.maps) return;
     spatialObjectsRef.current.forEach(item => item.setMap?.(null));
     const objects: any[] = [];
-    const toPath = (coordinates: unknown) => Array.isArray(coordinates) ? coordinates.filter(item => Array.isArray(item) && item.length >= 2 && Number.isFinite(Number(item[0])) && Number.isFinite(Number(item[1]))).map(item => new naver.maps.LatLng(Number(item[1]), Number(item[0]))) : [];
+    const toPath = (coordinates: unknown) => Array.isArray(coordinates) ? coordinates.filter(item => Array.isArray(item) && item.length >= 2 && Number.isFinite(Number(item[0])) && Number.isFinite(Number(item[1])) && Math.abs(Number(item[0])) <= 180 && Math.abs(Number(item[1])) <= 90).map(item => new naver.maps.LatLng(Number(item[1]), Number(item[0]))) : [];
     spatialLayers.forEach(spatialLayer => spatialLayer.features.forEach(feature => {
       const geometry = feature.geometry;
       const color = spatialLayer.id === "vworldRoads" ? "#6b4f3b" : "#65745c";
@@ -137,20 +137,24 @@ export function SiteMapPicker({ clientId, latitude, longitude, address, boundary
     if (!map || !naver?.maps) return;
     parcelObjectsRef.current.forEach(item => item.setMap?.(null));
     const objects: any[] = [];
-    const toPath = (coordinates: unknown) => Array.isArray(coordinates) ? coordinates.filter(item => Array.isArray(item) && item.length >= 2 && Number.isFinite(Number(item[0])) && Number.isFinite(Number(item[1]))).map(item => new naver.maps.LatLng(Number(item[1]), Number(item[0]))) : [];
+    const toPath = (coordinates: unknown) => Array.isArray(coordinates) ? coordinates.filter(item => Array.isArray(item) && item.length >= 2 && Number.isFinite(Number(item[0])) && Number.isFinite(Number(item[1])) && Math.abs(Number(item[0])) <= 180 && Math.abs(Number(item[1])) <= 90).map(item => new naver.maps.LatLng(Number(item[1]), Number(item[0]))) : [];
     parcelCandidates.forEach(candidate => {
       const geometry = candidate.geometry;
       if (!geometry || (geometry.type !== "Polygon" && geometry.type !== "MultiPolygon")) return;
       const selected = parcelCandidateKey(candidate) === selectedParcelKey;
       const color = selected ? "#d87939" : "#2f7d73";
-      const paths = geometry.type === "Polygon" && Array.isArray(geometry.coordinates)
-        ? geometry.coordinates.map((ring: unknown) => toPath(ring))
+      const polygonPaths = geometry.type === "Polygon" && Array.isArray(geometry.coordinates)
+        ? [geometry.coordinates.map((ring: unknown) => toPath(ring)).filter(path => path.length >= 3)]
         : geometry.type === "MultiPolygon" && Array.isArray(geometry.coordinates)
-          ? geometry.coordinates.flatMap(polygon => Array.isArray(polygon) ? [polygon.map((ring: unknown) => toPath(ring))] : [])
+          ? geometry.coordinates.filter(polygon => Array.isArray(polygon)).map(polygon => polygon.map((ring: unknown) => toPath(ring)).filter(path => path.length >= 3))
           : [];
-      const shape = new naver.maps.Polygon({ map, paths, strokeColor: color, strokeOpacity: .95, strokeWeight: selected ? 3 : 1, fillColor: color, fillOpacity: selected ? .32 : .08, clickable: true });
-      naver.maps.Event.addListener(shape, "click", (event: any) => { event?.domEvent?.stopPropagation?.(); onParcelSelectRef.current(candidate); });
-      objects.push(shape);
+      polygonPaths.forEach(paths => {
+        const outerPath = paths[0];
+        if (!outerPath || outerPath.length < 3) return;
+        const shape = new naver.maps.Polygon({ map, paths: outerPath, strokeColor: color, strokeOpacity: .95, strokeWeight: selected ? 3 : 1, fillColor: color, fillOpacity: selected ? .32 : .08, clickable: true });
+        naver.maps.Event.addListener(shape, "click", (event: any) => { event?.domEvent?.stopPropagation?.(); onParcelSelectRef.current(candidate); });
+        objects.push(shape);
+      });
     });
     parcelObjectsRef.current = objects;
     return () => parcelObjectsRef.current.forEach(item => item.setMap?.(null));

@@ -4,6 +4,28 @@ export type VworldParcelCandidate = { featureId?: string; pnu?: string; parcelNu
 
 export function parcelCandidateKey(candidate: VworldParcelCandidate) { return candidate.pnu || candidate.featureId || `${candidate.parcelNumber ?? "parcel"}-${candidate.landCategory ?? "unknown"}`; }
 
+function normalizeCoordinates(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  if (value.length >= 2 && !Array.isArray(value[0]) && !Array.isArray(value[1])) {
+    const x = Number(value[0]); const y = Number(value[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return value;
+    if (Math.abs(x) > 180 || Math.abs(y) > 90) {
+      const longitude = x / 20037508.34 * 180;
+      const latitude = (Math.atan(Math.exp(y / 20037508.34 * Math.PI)) * 360 / Math.PI) - 90;
+      return [longitude, latitude, ...value.slice(2)];
+    }
+    return value;
+  }
+  return value.map(normalizeCoordinates);
+}
+
+function normalizeGeometry(value: unknown): SpatialGeometry | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const geometry = value as Record<string, unknown>;
+  if (typeof geometry.type !== "string") return undefined;
+  return { ...geometry, coordinates: geometry.coordinates === undefined ? undefined : normalizeCoordinates(geometry.coordinates) } as SpatialGeometry;
+}
+
 export function candidateBoundary(candidate: VworldParcelCandidate): BoundaryPoint[] {
   const geometry = candidate.geometry;
   const coordinates = geometry?.coordinates;
@@ -88,7 +110,7 @@ export function normalizeVworldWfsFeatures(payload: unknown): VworldWfsFeature[]
   const features = Array.isArray(collection.features) ? collection.features : [];
   return features.filter(feature => feature && typeof feature === "object").map(feature => {
     const item = feature as Record<string, unknown>;
-    const geometry = item.geometry && typeof item.geometry === "object" && typeof (item.geometry as Record<string, unknown>).type === "string" ? item.geometry as SpatialGeometry : undefined;
+    const geometry = normalizeGeometry(item.geometry);
     return { id: typeof item.id === "string" ? item.id : undefined, geometry, properties: item.properties && typeof item.properties === "object" ? item.properties as Record<string, unknown> : {} };
   });
 }
@@ -110,7 +132,7 @@ export function normalizeVworldBrowserCandidates(payload: unknown): VworldParcel
     const item = feature && typeof feature === "object" ? feature as Record<string, unknown> : {};
     const properties = item.properties && typeof item.properties === "object" ? item.properties as Record<string, unknown> : {};
     const get = (...keys: string[]) => keys.map(key => properties[key]).find(value => value !== undefined && value !== null && String(value).trim() !== "");
-    const geometry = item.geometry && typeof item.geometry === "object" && typeof (item.geometry as Record<string, unknown>).type === "string" ? item.geometry as SpatialGeometry : undefined;
+    const geometry = normalizeGeometry(item.geometry);
     return { featureId: typeof item.id === "string" ? item.id : undefined, pnu: get("pnu", "PNU", "pnu_cd") ? String(get("pnu", "PNU", "pnu_cd")) : undefined, parcelNumber: get("jibun", "JIBUN", "jibun_nm") ? String(get("jibun", "JIBUN", "jibun_nm")) : undefined, landCategory: get("jimok", "JIMOK", "lndcgr") ? String(get("jimok", "JIMOK", "lndcgr")) : undefined, areaSqm: get("area", "AREA", "pcl_area") ? String(get("area", "AREA", "pcl_area")) : undefined, geometry, properties };
   });
 }
