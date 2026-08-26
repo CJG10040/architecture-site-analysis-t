@@ -1,13 +1,17 @@
 import type { PublicServiceSettings, ResearchNote, SiteRecord } from "./model";
 import { fetchVworldBrowserParcel, fetchVworldBuildingUseWfs, fetchVworldDataFeatures, fetchVworldWfs, mergeBuildingUseFeatures } from "./vworld";
 
-export type SourceId = "terrain" | "air" | "vworldParcel" | "cityParks" | "vworldBuildings" | "vworldRoads" | "vworldZoning" | "landRegulation";
+export type SourceId = "terrain" | "air" | "vworldParcel" | "cityParks" | "vworldBuildings" | "vworldRoads" | "vworldZoning" | "landRegulation" | "vworldWelfare" | "vworldTransit" | "vworldBusiness" | "vworldCulture";
 export type SourceDefinition = { id: SourceId; catalogId: string; title: string; source: string; lenses: string[]; needs: "none" | "vworldKey" | "dataGoKrKey"; limitation: string };
 export const sourceCatalog: SourceDefinition[] = [
   { id: "terrain", catalogId: "elevation", title: "고도·지형 표본", source: "Open-Meteo Elevation API", lenses: ["지형·레벨"], needs: "none", limitation: "격자 고도는 옹벽·계단·정확한 설계 레벨을 대체하지 않습니다." },
   { id: "air", catalogId: "air-quality", title: "대기질·기상 표본", source: "Open-Meteo Air Quality API", lenses: ["지역 생활", "녹지·생태"], needs: "none", limitation: "예보·격자 표본이며 현장 체감·공식 측정소 확정값과 다를 수 있습니다." },
   { id: "vworldZoning", catalogId: "land-use-zoning", title: "용도지역·지구·구역 공간 표본", source: "VWorld 2D Data · LT_C_LHBLPN", lenses: ["필지·법규·경계"], needs: "vworldKey", limitation: "토지이용계획도 공간 표본이며 법규·인허가 결론을 대체하지 않습니다. 최신 고시·토지이음·관할기관 원문을 함께 확인해야 합니다." },
   { id: "landRegulation", catalogId: "land-regulation", title: "PNU 행위제한 원문 확인 패키지", source: "토지이음 · 국토교통부 토지이용규제정보", lenses: ["필지·법규·경계"], needs: "none", limitation: "자동 법규 판정이 아닙니다. PNU로 연결된 토지이음 원문·최신 고시·관할기관 확인을 사용자가 완료해야 합니다." },
+  { id: "vworldWelfare", catalogId: "public-welfare", title: "복지·공공시설 공간 표본", source: "VWorld WFS · 복지시설 레이어", lenses: ["사람·주거·생활", "지역 생활"], needs: "vworldKey", limitation: "VWorld에 등록된 시설 레이어의 공간·속성 표본입니다. 운영 여부·이용 가능성·전체 시설 부재를 단정하지 않습니다." },
+  { id: "vworldTransit", catalogId: "transit", title: "대중교통 노드 공간 표본", source: "VWorld WFS · lt_p_moctnode", lenses: ["이동·접근·시간"], needs: "vworldKey", limitation: "교통노드 위치·속성만 확인하며 노선 빈도·도보시간·실제 이용량은 별도 자료가 필요합니다." },
+  { id: "vworldBusiness", catalogId: "businesses", title: "주요상권 공간 표본", source: "VWorld WFS · lt_c_dgmainbiz", lenses: ["상업·생산·지역경제", "지역 생활"], needs: "vworldKey", limitation: "주요상권 레이어는 전체 사업체·실제 영업·시간대 활동을 대체하지 않습니다." },
+  { id: "vworldCulture", catalogId: "culture-heritage", title: "문화시설·도서관 공간 표본", source: "VWorld WFS · 박물관미술관·작은도서관", lenses: ["문화·기억·유휴"], needs: "vworldKey", limitation: "등록된 문화시설·도서관 표본이며 비공식 지역 기억과 실제 사용 흔적은 현장조사가 필요합니다." },
   { id: "vworldParcel", catalogId: "site-boundary", title: "연속지적도 필지 후보", source: "VWorld", lenses: ["지형·레벨", "프로그램·상권"], needs: "vworldKey", limitation: "브라우저 키 도메인 등록과 필지 후보의 사용자 확인이 필요합니다." },
   { id: "vworldBuildings", catalogId: "buildings", title: "건축물 footprint 공간 표본", source: "VWorld WFS · lt_c_spbd", lenses: ["지형·레벨", "일조·차폐"], needs: "vworldKey", limitation: "현재는 조사 반경 내 공간객체 수와 속성 표본을 근거로 저장하며, 용도·층수의 완전한 결합은 추가 구현이 필요합니다." },
   { id: "vworldRoads", catalogId: "roads", title: "도로·교통링크 공간 표본", source: "VWorld WFS · lt_l_moctlink", lenses: ["보행·접근", "프로그램·상권"], needs: "vworldKey", limitation: "교통링크가 응답하지 않으면 도로중심선 fallback과 원본 응답 확인이 필요하며, 교통량은 별도 연결 전까지 미확인입니다." },
@@ -41,6 +45,18 @@ export async function collectSource(source: SourceDefinition, site: SiteRecord, 
     const checklist = { pnu: pnus, officialUrl, checkedItems: ["지역·지구 등 지정 내용", "행위제한 내용과 행위가능 여부", "건폐율·용적률", "층수·높이 제한", "건축선·도로조건", "최신 고시·조례·관할기관 확인"], warning: "이 패키지는 확인할 원문과 체크 항목을 생성할 뿐 법규 적합성이나 인허가를 판정하지 않습니다." };
     const raw = JSON.stringify(checklist, null, 2);
     return note(source.source, source.title, `확정 PNU ${pnus.join(", ")}에 대한 토지이음 원문 확인 링크와 검토 항목을 만들었습니다. 법규 판단은 아직 미완료입니다.`, officialUrl, { latitude: site.latitude, longitude: site.longitude }, { catalogId: source.catalogId, detail: `PNU 기반 행위제한 원문 확인 패키지입니다. 사용자가 토지이음 원문을 열어 각 항목을 확인하고 결과를 추가 기록해야 합니다.\n${raw}`, rawData: raw });
+  }
+  if (["vworldWelfare", "vworldTransit", "vworldBusiness", "vworldCulture"].includes(source.id)) {
+    const layerSets: Record<string, string[]> = { vworldWelfare: ["lt_p_mgprtfa", "lt_p_mgprtfb", "lt_p_mgprtfc", "lt_p_mgprtfd"], vworldTransit: ["lt_p_moctnode"], vworldBusiness: ["lt_c_dgmainbiz"], vworldCulture: ["lt_p_dgmuseumart", "lt_p_smalllibrary"] };
+    const typenames = layerSets[source.id];
+    const results = await Promise.all(typenames.map(async typename => { try { const fetched = await fetchVworldWfs({ key: settings.vworldKey, domain: settings.vworldDomain, typename, latitude: site.latitude, longitude: site.longitude, radiusMeters: siteRadius(radiusMeters) }); return { typename, features: fetched.features, bbox: fetched.bbox }; } catch (error) { return { typename, features: [], error: error instanceof Error ? error.message : "원인 미상", bbox: undefined }; } }));
+    const features = results.flatMap(result => result.features.map(feature => ({ ...feature, properties: { ...feature.properties, _vworldLayer: result.typename } })));
+    const errors = results.filter(result => "error" in result && result.error).map(result => `${result.typename}: ${result.error}`);
+    if (!features.length && errors.length === results.length) throw new Error(`선택한 VWorld 생활권 레이어를 모두 읽지 못했습니다. ${errors.join(" / ")}`);
+    const propertyNames = Array.from(new Set(features.flatMap(feature => Object.keys(feature.properties).filter(name => name !== "_vworldLayer")))).slice(0, 16).join(", ");
+    const spatialFeatures = features.filter(feature => feature.geometry).slice(0, 300).map((feature, index) => ({ id: feature.id ?? `${source.id}-${index + 1}`, geometry: feature.geometry!, properties: feature.properties }));
+    const noteRecord = note(source.source, source.title, `조사 반경 ${siteRadius(radiusMeters)}m 내 ${typenames.join(", ")} 레이어에서 공간객체 ${features.length.toLocaleString("ko-KR")}개를 확인했습니다. ${errors.length ? `실패 레이어 ${errors.length}개. ` : ""}속성 표본: ${propertyNames || "응답 속성 없음"}. ${source.limitation}`, "https://vworld.kr/dev/v4dv_wmsguide2_s001.do", { latitude: site.latitude, longitude: site.longitude }, { catalogId: source.catalogId, detail: `VWorld 생활권 레이어 원본 feature입니다.\n${JSON.stringify({ results, features }, null, 2)}`, ...serializeDetail({ results, features }), spatialLayer: { id: source.id, title: source.title, source: source.source, fetchedAt: new Date().toISOString(), features: spatialFeatures, totalFeatureCount: features.length, truncated: features.length > spatialFeatures.length } });
+    return noteRecord;
   }
   if (source.id === "vworldZoning") {
     const result = await fetchVworldDataFeatures({ key: settings.vworldKey, domain: settings.vworldDomain, data: "LT_C_LHBLPN", latitude: site.latitude, longitude: site.longitude, radiusMeters: siteRadius(radiusMeters), boundary: site.boundary, size: 200 });
