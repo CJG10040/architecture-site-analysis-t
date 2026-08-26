@@ -8,5 +8,6 @@ describe("approved research sources", () => {
     expect(ids).toEqual(expect.arrayContaining(["vworldZoning", "landRegulation"]));
     expect(suggestedSources([], ["transit", "public-welfare", "businesses"]).map(item => item.id)).toEqual(expect.arrayContaining(["vworldTransit", "vworldWelfare", "vworldBusiness"]));
   });
+  it("requires both SGIS credentials for census sources", () => expect(sourceAvailability(sourceCatalog.find(item => item.id === "sgisPopulation")!, { vworldKey: "", dataGoKrKey: "", naverMapsClientId: "", sgisClientId: "demo", sgisClientSecret: "" })).toBe(false));
   it("does not claim a keyed source is available without its key", () => expect(sourceAvailability(sourceCatalog.find(item => item.id === "vworldParcel")!, { vworldKey: "", dataGoKrKey: "", naverMapsClientId: "" })).toBe(false));
 });
