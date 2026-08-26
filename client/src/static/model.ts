@@ -2,7 +2,7 @@ export type LlmProvider = "openai" | "gemini" | "anthropic";
 
 export type BoundaryPoint = { lat: number; lng: number };
 export type SpatialGeometry = { type: string; coordinates?: unknown; geometries?: SpatialGeometry[] };
-export type SiteParcel = { featureId?: string; pnu?: string; parcelNumber?: string; landCategory?: string; areaSqm?: string; geometry?: SpatialGeometry; properties?: Record<string, unknown> };
+export type SiteParcel = { featureId?: string; pnu?: string; parcelNumber?: string; landCategory?: string; areaSqm?: string; parcelAddress?: string; publicPriceWonPerSqm?: string; dataDate?: string; attributeSource?: string; attributeError?: string; geometry?: SpatialGeometry; properties?: Record<string, unknown> };
 export type SiteGeoJson = { type: "Polygon"; coordinates: number[][][] } | { type: "MultiPolygon"; coordinates: number[][][][] };
 export type SiteRecord = { address: string; latitude: number; longitude: number; boundary: BoundaryPoint[]; areaSqm?: number; perimeterMeters?: number; geoJson?: SiteGeoJson; parcels?: SiteParcel[]; pnu?: string; parcelLabel?: string };
 export type Observation = { id: string; title: string; note: string; category: string; createdAt: string };

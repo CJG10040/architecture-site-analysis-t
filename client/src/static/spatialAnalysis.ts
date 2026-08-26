@@ -1,4 +1,4 @@
-import type { SpatialFeature, SpatialGeometry, SpatialLayer } from "./model";
+import type { SiteRecord, SpatialFeature, SpatialGeometry, SpatialLayer } from "./model";
 
 const earthRadiusMeters = 6371008.8;
 const asPair = (value: unknown): [number, number] | null => Array.isArray(value) && value.length >= 2 && Number.isFinite(Number(value[0])) && Number.isFinite(Number(value[1])) ? [Number(value[0]), Number(value[1])] : null;
@@ -101,6 +101,39 @@ export type SpatialLayerSummary = {
   densityPerSqKm: number;
   propertyCount: number;
 };
+
+export type SiteEvidenceDigest = {
+  siteAreaSqm: number | null;
+  parcelCount: number;
+  parcelAreaSqm: number | null;
+  buildingCount: number;
+  buildingFootprintSqm: number;
+  buildingCoveragePercent: number | null;
+  roadCount: number;
+  nearestRoadMeters: number | null;
+  facilitiesByLayer: Record<string, number>;
+  facts: string[];
+  relations: string[];
+  unknowns: string[];
+  next: string[];
+};
+
+export function analyzeSiteEvidence(site: SiteRecord, layers: SpatialLayer[]): SiteEvidenceDigest {
+  const siteAreaSqm = Number.isFinite(site.areaSqm) && (site.areaSqm ?? 0) > 0 ? site.areaSqm! : null;
+  const parcels = site.parcels ?? [];
+  const parcelAreas = parcels.map(parcel => Number(String(parcel.areaSqm ?? "").replace(/,/g, ""))).filter(value => Number.isFinite(value) && value > 0);
+  const buildingLayer = layers.find(layer => layer.id === "vworldBuildings");
+  const roadLayer = layers.find(layer => layer.id === "vworldRoads");
+  const buildingArea = buildingLayer ? buildingLayer.features.reduce((sum, feature) => sum + geometryStats(feature.geometry).areaSqm, 0) : 0;
+  const relation = roadLayer ? roadBoundaryRelation(roadLayer.features, site.boundary) : { nearestDistanceMeters: null, within30m: 0, within60m: 0, note: "" };
+  const facilitiesByLayer = Object.fromEntries(layers.filter(layer => !["vworldBuildings", "vworldRoads"].includes(layer.id)).map(layer => [layer.title, layer.features.length]));
+  const buildingCoveragePercent = siteAreaSqm && buildingArea > 0 ? buildingArea / siteAreaSqm * 100 : null;
+  const facts = [`확정 필지 ${parcels.length}개`, siteAreaSqm ? `설계 경계 면적 약 ${Math.round(siteAreaSqm).toLocaleString("ko-KR")}㎡` : "설계 경계 면적 미확인", `주변 건축물 공간객체 ${buildingLayer?.totalFeatureCount.toLocaleString("ko-KR") ?? 0}개 중 지도 보존 ${buildingLayer?.features.length.toLocaleString("ko-KR") ?? 0}개`, `도로 공간객체 ${roadLayer?.totalFeatureCount.toLocaleString("ko-KR") ?? 0}개 중 지도 보존 ${roadLayer?.features.length.toLocaleString("ko-KR") ?? 0}개`];
+  const relations = [buildingCoveragePercent !== null ? `보존된 건축물 footprint 면적은 설계 경계의 약 ${buildingCoveragePercent.toFixed(1)}%로 계산됩니다. 표본 반경 건축물과 대지 경계 면적의 관계이며 건폐율이 아닙니다.` : "건축물 footprint와 설계 경계의 면적 관계를 계산할 수 없습니다.", relation.nearestDistanceMeters !== null ? `도로 중심선 표본 중 가장 가까운 경계 꼭짓점까지 약 ${Math.round(relation.nearestDistanceMeters)}m입니다. 법적 접도·보도 폭은 확인하지 않았습니다.` : "도로 중심선과 대지 경계의 참고거리를 계산할 수 없습니다."];
+  const unknowns = ["교통량·보행량·소음·냄새·실제 이용률은 공간자료만으로 확인되지 않습니다.", "건축물 footprint 면적은 건폐율·연면적·허가 가능 면적이 아닙니다.", "필지 공부면적은 토지임야정보 API 성공 여부에 따라 별도 확인이 필요합니다."];
+  const next = ["가장 가까운 도로의 실제 접면·보도·횡단 조건을 현장에서 확인", "건물 용도·층수 결합률과 현장 사용 흔적 비교", "시간대별 소리·보행·체류를 반복 관찰"];
+  return { siteAreaSqm, parcelCount: parcels.length, parcelAreaSqm: parcelAreas.length ? parcelAreas.reduce((sum, value) => sum + value, 0) : null, buildingCount: buildingLayer?.features.length ?? 0, buildingFootprintSqm: buildingArea, buildingCoveragePercent, roadCount: roadLayer?.features.length ?? 0, nearestRoadMeters: relation.nearestDistanceMeters, facilitiesByLayer, facts, relations, unknowns, next };
+}
 
 export function summarizeSpatialLayer(layer: SpatialLayer, radiusMeters: number): SpatialLayerSummary {
   const stats = layer.features.reduce((total: { lengthMeters: number; areaSqm: number }, feature: SpatialFeature) => {

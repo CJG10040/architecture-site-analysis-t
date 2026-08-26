@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { candidateBoundary, fetchVworldBrowserParcel, fetchVworldWfs, mergeBuildingUseFeatures, normalizeVworldBrowserCandidates, normalizeVworldKey, normalizeVworldWfsFeatures, parcelCandidateKey, parcelIntersectsBoundary } from "./vworld";
+import { candidateBoundary, fetchVworldBrowserParcel, fetchVworldWfs, mergeBuildingUseFeatures, normalizeVworldBrowserCandidates, normalizeVworldLandCharacteristics, normalizeVworldKey, normalizeVworldWfsFeatures, parcelCandidateKey, parcelIntersectsBoundary } from "./vworld";
 
 describe("normalizeVworldKey", () => {
   it("removes copied wrapping quotes and whitespace without exposing the key", () => {
@@ -8,6 +8,12 @@ describe("normalizeVworldKey", () => {
 });
 
 describe("normalizeVworldBrowserCandidates", () => {
+  it("derives geometry area and reads cadastral aliases when the map layer omits them", () => {
+    const candidates = normalizeVworldBrowserCandidates({ type: "FeatureCollection", features: [{ geometry: { type: "Polygon", coordinates: [[[126.9, 35.1], [126.901, 35.1], [126.901, 35.101], [126.9, 35.1]]] }, properties: { PNU: "2911010100100010000", JIBUN_NM: "1-1", ADDR: "광주광역시 테스트동 1-1" } }] });
+    expect(candidates[0]).toMatchObject({ pnu: "2911010100100010000", parcelNumber: "1-1", parcelAddress: "광주광역시 테스트동 1-1" });
+    expect(Number(candidates[0].areaSqm)).toBeGreaterThan(0);
+  });
+
   it("reads parcel metadata without preserving a browser key", () => {
     const candidates = normalizeVworldBrowserCandidates({ response: { result: { featureCollection: { features: [{ id: "parcel.1", geometry: { type: "Polygon", coordinates: [[[126.9, 35.1], [126.901, 35.1], [126.901, 35.101], [126.9, 35.1]]] }, properties: { pnu: "2911010100100010000", jibun: "1-1", jimok: "대", area: 121.5 } }] } } } });
     expect(candidates[0]).toMatchObject({ featureId: "parcel.1", pnu: "2911010100100010000", parcelNumber: "1-1", landCategory: "대", areaSqm: "121.5" });
@@ -15,6 +21,13 @@ describe("normalizeVworldBrowserCandidates", () => {
     expect(candidateBoundary(candidates[0])).toHaveLength(3);
     expect(parcelIntersectsBoundary(candidates[0], [{ lat: 35.1005, lng: 126.9005 }, { lat: 35.1005, lng: 126.9015 }, { lat: 35.1015, lng: 126.9015 }, { lat: 35.1015, lng: 126.9005 }])).toBe(true);
     expect(parcelIntersectsBoundary(candidates[0], [{ lat: 35.102, lng: 126.902 }, { lat: 35.102, lng: 126.903 }, { lat: 35.103, lng: 126.903 }, { lat: 35.103, lng: 126.902 }])).toBe(false);
+  });
+});
+
+describe("VWorld land attributes", () => {
+  it("normalizes land register attributes by PNU", () => {
+    const records = normalizeVworldLandCharacteristics({ landCharacteristic: { fields: [{ pnu: "2911010100100010000", lndcgrCodeNm: "대", lndpclAr: "121.5", pblntfPclnd: "500000", lastUpdtDt: "2025-07-01" }] } });
+    expect(records[0]).toMatchObject({ pnu: "2911010100100010000", landCategory: "대", areaSqm: "121.5", publicPriceWonPerSqm: "500000", dataDate: "2025-07-01" });
   });
 });
 

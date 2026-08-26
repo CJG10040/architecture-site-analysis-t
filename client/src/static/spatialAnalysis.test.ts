@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analyzeRoadLayer, roadBoundaryRelation, summarizeSpatialLayer } from "./spatialAnalysis";
+import { analyzeRoadLayer, analyzeSiteEvidence, roadBoundaryRelation, summarizeSpatialLayer } from "./spatialAnalysis";
 
 describe("spatial layer summaries", () => {
   it("calculates line length and context density without inventing traffic data", () => {
@@ -14,6 +14,19 @@ describe("spatial layer summaries", () => {
     const summary = summarizeSpatialLayer({ id: "buildings", title: "건축물", source: "test", fetchedAt: "2026-01-01", totalFeatureCount: 1, truncated: false, features: [{ id: "b1", geometry: { type: "Polygon", coordinates: [[[126, 35], [126.001, 35], [126.001, 35.001], [126, 35.001], [126, 35]]] }, properties: {} }] }, 300);
     expect(summary.totalAreaSqm).toBeGreaterThan(9000);
     expect(summary.totalAreaSqm).toBeLessThan(11000);
+  });
+});
+
+describe("site evidence digest", () => {
+  it("turns parcel, building, and road data into local facts and relations", () => {
+    const digest = analyzeSiteEvidence({ address: "테스트", latitude: 35.1, longitude: 126.9, boundary: [{ lat: 35.1, lng: 126.9 }, { lat: 35.101, lng: 126.9 }, { lat: 35.101, lng: 126.901 }], areaSqm: 10000, parcels: [{ pnu: "1", areaSqm: "9000" }] }, [
+      { id: "vworldBuildings", title: "건축물", source: "test", fetchedAt: "2026-01-01", totalFeatureCount: 1, truncated: false, features: [{ id: "b1", geometry: { type: "Polygon", coordinates: [[[126.9, 35.1], [126.9002, 35.1], [126.9002, 35.1002], [126.9, 35.1002], [126.9, 35.1]]] }, properties: {} }] },
+      { id: "vworldRoads", title: "도로", source: "test", fetchedAt: "2026-01-01", totalFeatureCount: 1, truncated: false, features: [{ id: "r1", geometry: { type: "LineString", coordinates: [[126.9001, 35.1001], [126.901, 35.1001]] }, properties: {} }] },
+    ]);
+    expect(digest.parcelCount).toBe(1);
+    expect(digest.buildingFootprintSqm).toBeGreaterThan(0);
+    expect(digest.relations.join(" ")).toContain("건폐율이 아닙니다");
+    expect(digest.unknowns.join(" ")).toContain("교통량");
   });
 });
 

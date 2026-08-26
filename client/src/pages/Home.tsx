@@ -101,7 +101,7 @@ export default function Home() {
   const confirmParcels = (candidates: VworldParcelCandidate[]) => {
     if (!candidates.length) return;
     const first = candidates[0];
-    const parcelLabel = candidates.length === 1 ? [first.parcelNumber, first.landCategory].filter(Boolean).join(" · ") : `${candidates.length}개 필지 묶음 · ${candidates.map(candidate => candidate.parcelNumber ?? "지번 미확인").join(", ")}`;
+    const parcelLabel = candidates.length === 1 ? [first.parcelNumber, first.landCategory, first.areaSqm ? `${first.areaSqm}㎡` : undefined].filter(Boolean).join(" · ") : `${candidates.length}개 필지 묶음 · ${candidates.map(candidate => candidate.parcelNumber ?? "지번 미확인").join(", ")}`;
     const parcelPoints = candidates.length === 1 ? candidateBoundary(first) : [];
     const applyParcelGeometry = parcelPoints.length >= 3 && project.site.boundary.length < 3;
     const parcelMetrics = boundaryMetrics(parcelPoints);
@@ -109,7 +109,7 @@ export default function Home() {
     const nextSite = { ...project.site, pnu: candidates.length === 1 ? first.pnu : undefined, parcelLabel, parcels: candidates, geoJson: project.site.geoJson };
     if (groupGeoJson) nextSite.geoJson = candidates.length === 1 && applyParcelGeometry ? boundaryGeoJson(parcelPoints) ?? groupGeoJson : groupGeoJson;
     if (applyParcelGeometry) Object.assign(nextSite, { boundary: parcelPoints, areaSqm: parcelMetrics.areaSqm || undefined, perimeterMeters: parcelMetrics.perimeterMeters || undefined });
-    commit({ ...project, site: nextSite, researchNotes: [{ id: newId(), source: "VWorld 연속지적도", title: candidates.length === 1 ? "사용자 확정 필지" : `사용자 확정 필지 묶음 (${candidates.length}개)`, summary: `${candidates.map(candidate => `PNU ${candidate.pnu ?? "미확인"} · 지번 ${candidate.parcelNumber ?? "미확인"} · 면적 ${candidate.areaSqm ? `${candidate.areaSqm}㎡` : "미확인"}`).join(" / ")}. 지도 위 연속지적도 Polygon을 사용자가 선택했습니다.${applyParcelGeometry ? " 기존 대지경계가 없어 단일 필지 geometry를 대지경계로 적용했습니다." : " 각 필지 geometry를 묶음으로 저장하고 기존 대지경계는 유지했습니다."}`, latitude: project.site.latitude, longitude: project.site.longitude, createdAt: new Date().toISOString() }, ...project.researchNotes] });
+    commit({ ...project, site: nextSite, researchNotes: [{ id: newId(), source: "VWorld 연속지적도", title: candidates.length === 1 ? "사용자 확정 필지" : `사용자 확정 필지 묶음 (${candidates.length}개)`, summary: `${candidates.map(candidate => `PNU ${candidate.pnu ?? "미확인"} · 지번 ${candidate.parcelNumber ?? "미확인"} · 지목 ${candidate.landCategory ?? "속성 미확인"} · 면적 ${candidate.areaSqm ? `${candidate.areaSqm}㎡` : "geometry 면적 미확인"}${candidate.parcelAddress ? ` · 소재지 ${candidate.parcelAddress}` : ""}${candidate.publicPriceWonPerSqm ? ` · 공시지가 ${candidate.publicPriceWonPerSqm}원/㎡` : ""}`).join(" / ")}. 지도 위 연속지적도 Polygon을 사용자가 선택했습니다.${applyParcelGeometry ? " 기존 대지경계가 없어 단일 필지 geometry를 대지경계로 적용했습니다." : " 각 필지 geometry를 묶음으로 저장하고 기존 대지경계는 유지했습니다."}`, latitude: project.site.latitude, longitude: project.site.longitude, createdAt: new Date().toISOString() }, ...project.researchNotes] });
     toast.success(candidates.length === 1 && applyParcelGeometry ? "필지를 확정하고 대지경계를 적용했습니다." : `${candidates.length}개 필지를 하나의 설계 대상 묶음으로 확정했습니다.`);
   };
   const saveDesignTurn = (text: string, provider: "openai" | "gemini" | "anthropic") => commit({ ...project, designNotes: [{ id: newId(), question: `${provider} 설계 전환`, evidence: `${project.researchNotes.length}개 조사 근거·${project.observations.length}개 현장 관찰`, spatialIdea: text, createdAt: new Date().toISOString() }, ...project.designNotes] });

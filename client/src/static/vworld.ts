@@ -1,6 +1,6 @@
 import type { BoundaryPoint, SpatialGeometry } from "./model";
 
-export type VworldParcelCandidate = { featureId?: string; pnu?: string; parcelNumber?: string; landCategory?: string; areaSqm?: string; geometry?: SpatialGeometry; properties?: Record<string, unknown> };
+export type VworldParcelCandidate = { featureId?: string; pnu?: string; parcelNumber?: string; landCategory?: string; areaSqm?: string; parcelAddress?: string; publicPriceWonPerSqm?: string; dataDate?: string; attributeSource?: string; attributeError?: string; geometry?: SpatialGeometry; properties?: Record<string, unknown> };
 
 export function parcelCandidateKey(candidate: VworldParcelCandidate) { return candidate.pnu || candidate.featureId || `${candidate.parcelNumber ?? "parcel"}-${candidate.landCategory ?? "unknown"}`; }
 
@@ -171,6 +171,23 @@ function contextBbox(latitude: number, longitude: number, radiusMeters: number) 
   return { west: longitude - lngDelta, south: latitude - latDelta, east: longitude + lngDelta, north: latitude + latDelta };
 }
 
+function normalizedPropertyName(value: string) { return value.toLowerCase().replace(/[\s_-]/g, ""); }
+function propertyValue(properties: Record<string, unknown>, keys: string[]) { const wanted = keys.map(normalizedPropertyName); return Object.entries(properties).find(([name, value]) => wanted.includes(normalizedPropertyName(name)) && value !== undefined && value !== null && String(value).trim() !== "")?.[1]; }
+function ringAreaSqm(ring: unknown) {
+  if (!Array.isArray(ring) || ring.length < 3) return 0;
+  const points = ring.map(pair => Array.isArray(pair) && pair.length >= 2 ? [Number(pair[0]), Number(pair[1])] : null).filter((pair): pair is [number, number] => pair !== null && Number.isFinite(pair[0]) && Number.isFinite(pair[1]));
+  if (points.length < 3) return 0;
+  const meanLat = points.reduce((sum, point) => sum + point[1], 0) / points.length;
+  const scale = Math.PI / 180 * 6378137;
+  const projected = points.map(([lng, lat]) => [lng * Math.cos(meanLat * Math.PI / 180) * scale, lat * scale]);
+  return Math.abs(projected.reduce((sum, point, index) => { const next = projected[(index + 1) % projected.length]; return sum + point[0] * next[1] - next[0] * point[1]; }, 0)) / 2;
+}
+function geometryAreaSqm(geometry?: SpatialGeometry) {
+  if (!geometry || !Array.isArray(geometry.coordinates)) return 0;
+  const polygons = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.type === "MultiPolygon" ? geometry.coordinates : [];
+  return polygons.reduce((total, polygon) => Array.isArray(polygon) ? total + polygon.reduce((sum, ring, index) => sum + (index === 0 ? ringAreaSqm(ring) : -ringAreaSqm(ring)), 0) : total, 0);
+}
+
 export function normalizeVworldBrowserCandidates(payload: unknown): VworldParcelCandidate[] {
   const root = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
   const response = root.response && typeof root.response === "object" ? root.response as Record<string, unknown> : root;
@@ -180,9 +197,13 @@ export function normalizeVworldBrowserCandidates(payload: unknown): VworldParcel
   return features.map(feature => {
     const item = feature && typeof feature === "object" ? feature as Record<string, unknown> : {};
     const properties = item.properties && typeof item.properties === "object" ? item.properties as Record<string, unknown> : {};
-    const get = (...keys: string[]) => keys.map(key => properties[key]).find(value => value !== undefined && value !== null && String(value).trim() !== "");
     const geometry = normalizeGeometry(item.geometry);
-    return { featureId: typeof item.id === "string" ? item.id : undefined, pnu: get("pnu", "PNU", "pnu_cd") ? String(get("pnu", "PNU", "pnu_cd")) : undefined, parcelNumber: get("jibun", "JIBUN", "jibun_nm") ? String(get("jibun", "JIBUN", "jibun_nm")) : undefined, landCategory: get("jimok", "JIMOK", "lndcgr") ? String(get("jimok", "JIMOK", "lndcgr")) : undefined, areaSqm: get("area", "AREA", "pcl_area") ? String(get("area", "AREA", "pcl_area")) : undefined, geometry, properties };
+    const pnu = propertyValue(properties, ["pnu", "pnu_cd", "pnuCode"]);
+    const parcelNumber = propertyValue(properties, ["jibun", "jibun_nm", "mnnmSlno"]);
+    const landCategory = propertyValue(properties, ["jimok", "jimok_nm", "lndcgr", "lndcgrNm", "lndcgrCodeNm"]);
+    const area = propertyValue(properties, ["area", "pcl_area", "lndpclAr", "lndpcl_area"]);
+    const computedArea = geometryAreaSqm(geometry);
+    return { featureId: typeof item.id === "string" ? item.id : undefined, pnu: pnu ? String(pnu) : undefined, parcelNumber: parcelNumber ? String(parcelNumber) : undefined, landCategory: landCategory ? String(landCategory) : undefined, areaSqm: area ? String(area) : computedArea > 0 ? computedArea.toFixed(2) : undefined, parcelAddress: propertyValue(properties, ["addr", "address", "locatJibunAddr"]) ? String(propertyValue(properties, ["addr", "address", "locatJibunAddr"])) : undefined, publicPriceWonPerSqm: propertyValue(properties, ["jiga", "pblntfPclnd", "pblntfPclndPrice"]) ? String(propertyValue(properties, ["jiga", "pblntfPclnd", "pblntfPclndPrice"])) : undefined, dataDate: propertyValue(properties, ["gosi_year", "lastUpdtDt", "stdrYear"]) ? String(propertyValue(properties, ["gosi_year", "lastUpdtDt", "stdrYear"])) : undefined, geometry, properties };
   });
 }
 
@@ -225,6 +246,52 @@ export async function fetchVworldBrowserParcel(input: { key: string; latitude: n
     if (/Failed to fetch|NetworkError/i.test(message)) throw new Error("브라우저에서 VWorld 응답을 읽지 못했습니다. GitHub Pages 도메인을 VWorld 인증키의 허용 도메인으로 등록한 뒤 다시 시도하세요.");
     throw new Error(message);
   }
+}
+
+function findLandRecords(value: unknown, records: Record<string, unknown>[] = []) {
+  if (Array.isArray(value)) { value.forEach(item => findLandRecords(item, records)); return records; }
+  if (!value || typeof value !== "object") return records;
+  const object = value as Record<string, unknown>;
+  const names = Object.keys(object).map(normalizedPropertyName);
+  if (names.some(name => ["lndcgrcodenm", "lndpclar", "pblntfpclnd"].includes(name))) records.push(object);
+  Object.values(object).forEach(child => findLandRecords(child, records));
+  return records;
+}
+
+export function normalizeVworldLandCharacteristics(payload: unknown): VworldParcelCandidate[] {
+  const records = findLandRecords(payload);
+  return records.map(properties => {
+    const pnu = propertyValue(properties, ["pnu"]); const parcelNumber = propertyValue(properties, ["mnnmSlno", "jibun"]); const landCategory = propertyValue(properties, ["lndcgrCodeNm", "lndcgrNm", "jimok"]); const area = propertyValue(properties, ["lndpclAr", "pclArea", "area"]); const price = propertyValue(properties, ["pblntfPclnd", "jiga"]); const date = propertyValue(properties, ["lastUpdtDt", "stdrYear"]);
+    return { pnu: pnu ? String(pnu) : undefined, parcelNumber: parcelNumber ? String(parcelNumber) : undefined, landCategory: landCategory ? String(landCategory) : undefined, areaSqm: area ? String(area) : undefined, publicPriceWonPerSqm: price ? String(price) : undefined, dataDate: date ? String(date) : undefined, attributeSource: "국토교통부 토지임야정보(속성정보)", properties };
+  });
+}
+
+export async function fetchVworldLandCharacteristics(input: { key: string; pnu: string; domain?: string; standardYear?: string }) {
+  const key = normalizeVworldKey(input.key);
+  if (!key) throw new Error("VWorld 인증키를 먼저 입력하세요.");
+  const url = new URL("https://api.vworld.kr/ned/data/getLandCharacteristics");
+  url.search = new URLSearchParams({ key, domain: requestDomain(input.domain), pnu: input.pnu, stdrYear: input.standardYear ?? "2025", format: "json", numOfRows: "1", pageNo: "1" }).toString();
+  try {
+    const payload = await jsonp(url.toString()); const apiError = apiErrorMessage(payload); if (apiError) throw new Error(apiError); const record = normalizeVworldLandCharacteristics(payload)[0];
+    if (!record) throw new Error("토지임야정보 응답에서 지목·면적 속성을 찾지 못했습니다.");
+    return record;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "알 수 없는 오류";
+    if (/Failed to fetch|NetworkError/i.test(message)) throw new Error("토지임야정보 브라우저 응답을 읽지 못했습니다. VWorld 키의 NED API 이용 권한과 허용 domain을 확인하세요.");
+    throw new Error(message);
+  }
+}
+
+export async function enrichVworldParcelCandidates(candidates: VworldParcelCandidate[], input: { key: string; domain?: string; standardYear?: string }) {
+  return Promise.all(candidates.map(async candidate => {
+    if (!candidate.pnu) return candidate;
+    try {
+      const attributes = await fetchVworldLandCharacteristics({ key: input.key, domain: input.domain, pnu: candidate.pnu, standardYear: input.standardYear });
+      return { ...candidate, ...attributes, pnu: candidate.pnu, parcelNumber: attributes.parcelNumber || candidate.parcelNumber, areaSqm: attributes.areaSqm || candidate.areaSqm, properties: { ...candidate.properties, ...attributes.properties } };
+    } catch (error) {
+      return { ...candidate, attributeError: error instanceof Error ? error.message : "토지 속성 보강 실패" };
+    }
+  }));
 }
 
 export async function fetchVworldBuildingUseWfs(input: { key: string; latitude: number; longitude: number; radiusMeters: number; maxFeatures?: number; domain?: string }) {
