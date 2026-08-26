@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { CheckCircle2, CircleAlert, ClipboardCheck, ExternalLink, LibraryBig, MapPinned } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { LocalProject } from "@/static/model";
-import { defaultResearchPlan, goalAlignment, priorityLabels, researchCatalog, researchThemes, statusLabels, type ResearchCatalogStatus } from "@/static/researchCatalog";
+import { defaultResearchPlan, goalAlignment, priorityLabels, researchCatalog, researchThemes, statusLabels, toggleResearchTheme, type ResearchCatalogStatus } from "@/static/researchCatalog";
 import type { ResearchPlan } from "@/static/model";
 import { analyzeRoadLayer, analyzeSiteEvidence, roadBoundaryRelation, summarizeSpatialLayer } from "@/static/spatialAnalysis";
 
@@ -34,7 +34,7 @@ export function ResearchCatalogPanel({ project, onPlanChange }: { project: Local
   const spatialSummary = project.spatialLayers.map(layer => ({ ...layer, metrics: summarizeSpatialLayer(layer, project.studyRadiusMeters) }));
   const evidence = analyzeSiteEvidence(project.site, project.spatialLayers);
   const plan = project.researchPlan ?? defaultResearchPlan();
-  const toggleTheme = (themeId: string) => onPlanChange({ ...plan, selectedThemeIds: plan.selectedThemeIds.includes(themeId) ? plan.selectedThemeIds.filter(id => id !== themeId) : [...plan.selectedThemeIds, themeId] });
+  const toggleTheme = (themeId: string) => onPlanChange(toggleResearchTheme(plan, themeId));
   const toggleCatalog = (catalogId: string) => onPlanChange({ ...plan, selectedCatalogIds: plan.selectedCatalogIds.includes(catalogId) ? plan.selectedCatalogIds.filter(id => id !== catalogId) : [...plan.selectedCatalogIds, catalogId] });
 
   return <section className="mt-5 border border-stone-300 bg-[#fbfaf7] p-4">

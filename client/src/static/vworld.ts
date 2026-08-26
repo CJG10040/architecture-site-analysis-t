@@ -1,6 +1,6 @@
 import type { BoundaryPoint, SpatialGeometry } from "./model";
 
-export type VworldParcelCandidate = { featureId?: string; pnu?: string; parcelNumber?: string; landCategory?: string; areaSqm?: string; parcelAddress?: string; publicPriceWonPerSqm?: string; dataDate?: string; attributeSource?: string; attributeError?: string; geometry?: SpatialGeometry; properties?: Record<string, unknown> };
+export type VworldParcelCandidate = { featureId?: string; pnu?: string; parcelNumber?: string; landCategory?: string; areaSqm?: string; areaSqmSource?: "attribute" | "geometry"; parcelAddress?: string; publicPriceWonPerSqm?: string; dataDate?: string; attributeSource?: string; attributeError?: string; geometry?: SpatialGeometry; properties?: Record<string, unknown> };
 
 export function parcelCandidateKey(candidate: VworldParcelCandidate) { return candidate.pnu || candidate.featureId || `${candidate.parcelNumber ?? "parcel"}-${candidate.landCategory ?? "unknown"}`; }
 
@@ -203,7 +203,7 @@ export function normalizeVworldBrowserCandidates(payload: unknown): VworldParcel
     const landCategory = propertyValue(properties, ["jimok", "jimok_nm", "lndcgr", "lndcgrNm", "lndcgrCodeNm"]);
     const area = propertyValue(properties, ["area", "pcl_area", "lndpclAr", "lndpcl_area"]);
     const computedArea = geometryAreaSqm(geometry);
-    return { featureId: typeof item.id === "string" ? item.id : undefined, pnu: pnu ? String(pnu) : undefined, parcelNumber: parcelNumber ? String(parcelNumber) : undefined, landCategory: landCategory ? String(landCategory) : undefined, areaSqm: area ? String(area) : computedArea > 0 ? computedArea.toFixed(2) : undefined, parcelAddress: propertyValue(properties, ["addr", "address", "locatJibunAddr"]) ? String(propertyValue(properties, ["addr", "address", "locatJibunAddr"])) : undefined, publicPriceWonPerSqm: propertyValue(properties, ["jiga", "pblntfPclnd", "pblntfPclndPrice"]) ? String(propertyValue(properties, ["jiga", "pblntfPclnd", "pblntfPclndPrice"])) : undefined, dataDate: propertyValue(properties, ["gosi_year", "lastUpdtDt", "stdrYear"]) ? String(propertyValue(properties, ["gosi_year", "lastUpdtDt", "stdrYear"])) : undefined, geometry, properties };
+    return { featureId: typeof item.id === "string" ? item.id : undefined, pnu: pnu ? String(pnu) : undefined, parcelNumber: parcelNumber ? String(parcelNumber) : undefined, landCategory: landCategory ? String(landCategory) : undefined, areaSqm: area ? String(area) : computedArea > 0 ? computedArea.toFixed(2) : undefined, areaSqmSource: area ? "attribute" : computedArea > 0 ? "geometry" : undefined, parcelAddress: propertyValue(properties, ["addr", "address", "locatJibunAddr"]) ? String(propertyValue(properties, ["addr", "address", "locatJibunAddr"])) : undefined, publicPriceWonPerSqm: propertyValue(properties, ["jiga", "pblntfPclnd", "pblntfPclndPrice"]) ? String(propertyValue(properties, ["jiga", "pblntfPclnd", "pblntfPclndPrice"])) : undefined, dataDate: propertyValue(properties, ["gosi_year", "lastUpdtDt", "stdrYear"]) ? String(propertyValue(properties, ["gosi_year", "lastUpdtDt", "stdrYear"])) : undefined, geometry, properties };
   });
 }
 
@@ -262,7 +262,7 @@ export function normalizeVworldLandCharacteristics(payload: unknown): VworldParc
   const records = findLandRecords(payload);
   return records.map(properties => {
     const pnu = propertyValue(properties, ["pnu"]); const parcelNumber = propertyValue(properties, ["mnnmSlno", "jibun"]); const landCategory = propertyValue(properties, ["lndcgrCodeNm", "lndcgrNm", "jimok"]); const area = propertyValue(properties, ["lndpclAr", "pclArea", "area"]); const price = propertyValue(properties, ["pblntfPclnd", "jiga"]); const date = propertyValue(properties, ["lastUpdtDt", "stdrYear"]);
-    return { pnu: pnu ? String(pnu) : undefined, parcelNumber: parcelNumber ? String(parcelNumber) : undefined, landCategory: landCategory ? String(landCategory) : undefined, areaSqm: area ? String(area) : undefined, publicPriceWonPerSqm: price ? String(price) : undefined, dataDate: date ? String(date) : undefined, attributeSource: "국토교통부 토지임야정보(속성정보)", properties };
+    return { pnu: pnu ? String(pnu) : undefined, parcelNumber: parcelNumber ? String(parcelNumber) : undefined, landCategory: landCategory ? String(landCategory) : undefined, areaSqm: area ? String(area) : undefined, areaSqmSource: area ? "attribute" : undefined, publicPriceWonPerSqm: price ? String(price) : undefined, dataDate: date ? String(date) : undefined, attributeSource: "국토교통부 토지임야정보(속성정보)", properties };
   });
 }
 
@@ -287,7 +287,7 @@ export async function enrichVworldParcelCandidates(candidates: VworldParcelCandi
     if (!candidate.pnu) return candidate;
     try {
       const attributes = await fetchVworldLandCharacteristics({ key: input.key, domain: input.domain, pnu: candidate.pnu, standardYear: input.standardYear });
-      return { ...candidate, ...attributes, pnu: candidate.pnu, parcelNumber: attributes.parcelNumber || candidate.parcelNumber, areaSqm: attributes.areaSqm || candidate.areaSqm, properties: { ...candidate.properties, ...attributes.properties } };
+      return { ...candidate, ...attributes, pnu: candidate.pnu, parcelNumber: attributes.parcelNumber || candidate.parcelNumber, areaSqm: attributes.areaSqm || candidate.areaSqm, areaSqmSource: attributes.areaSqm ? "attribute" : candidate.areaSqmSource, properties: { ...candidate.properties, ...attributes.properties } };
     } catch (error) {
       return { ...candidate, attributeError: error instanceof Error ? error.message : "토지 속성 보강 실패" };
     }

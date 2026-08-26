@@ -1,5 +1,5 @@
 import type { PublicServiceSettings, ResearchNote, SiteRecord } from "./model";
-import { fetchVworldBrowserParcel, fetchVworldBuildingUseWfs, fetchVworldDataFeatures, fetchVworldWfs, mergeBuildingUseFeatures } from "./vworld";
+import { enrichVworldParcelCandidates, fetchVworldBrowserParcel, fetchVworldBuildingUseWfs, fetchVworldDataFeatures, fetchVworldWfs, mergeBuildingUseFeatures } from "./vworld";
 
 export type SourceId = "terrain" | "air" | "vworldParcel" | "cityParks" | "vworldBuildings" | "vworldRoads" | "vworldZoning" | "landRegulation" | "vworldWelfare" | "vworldTransit" | "vworldBusiness" | "vworldCulture" | "sgisPopulation" | "sgisBusiness";
 export type SourceDefinition = { id: SourceId; catalogId: string; title: string; source: string; lenses: string[]; needs: "none" | "vworldKey" | "dataGoKrKey" | "sgisKey"; limitation: string };
@@ -34,16 +34,18 @@ async function fetchSgisStats(kind: "population" | "company", site: SiteRecord, 
   const authUrl = new URL("https://sgisapi.mods.go.kr/OpenAPI3/auth/authentication.json");
   authUrl.search = new URLSearchParams({ consumer_key: settings.sgisClientId, consumer_secret: settings.sgisClientSecret }).toString();
   const authResponse = await fetch(authUrl); if (!authResponse.ok) throw new Error(`SGIS 인증 ${authResponse.status} 응답`); const authPayload = await authResponse.json(); const accessToken = authPayload?.result?.accessToken;
+  if (authPayload?.errCd !== undefined && String(authPayload.errCd) !== "0") throw new Error(`SGIS 인증 오류 ${authPayload.errCd}: ${authPayload.errMsg || "원인 미상"}`);
   if (!accessToken) throw new Error(authPayload?.errMsg || "SGIS accessToken을 받지 못했습니다.");
   const addressUrl = new URL("https://sgisapi.mods.go.kr/OpenAPI3/addr/rgeocodewgs84.json");
   addressUrl.search = new URLSearchParams({ accessToken, x_coor: String(site.longitude), y_coor: String(site.latitude), addr_type: "21" }).toString();
-  const addressResponse = await fetch(addressUrl); if (!addressResponse.ok) throw new Error(`SGIS 역지오코딩 ${addressResponse.status} 응답`); const addressPayload = await addressResponse.json(); const addressRows = Array.isArray(addressPayload?.result) ? addressPayload.result : [];
+  const addressResponse = await fetch(addressUrl); if (!addressResponse.ok) throw new Error(`SGIS 역지오코딩 ${addressResponse.status} 응답`); const addressPayload = await addressResponse.json(); if (addressPayload?.errCd !== undefined && String(addressPayload.errCd) !== "0") throw new Error(`SGIS 역지오코딩 오류 ${addressPayload.errCd}: ${addressPayload.errMsg || "원인 미상"}`); const addressRows = Array.isArray(addressPayload?.result) ? addressPayload.result : [];
   const address = addressRows[0] ?? {};
-  const admCode = [address.adm_cd, address.emdong_cd, address.emd_cd, address.sgg_cd, address.sido_cd, address.cd].find(value => typeof value === "string" && value.length >= 2);
-  if (!admCode) throw new Error("SGIS 역지오코딩에서 행정구역 코드를 찾지 못했습니다.");
+  const administrativeCodes = [address.adm_cd, address.emdong_cd, address.emd_cd, address.sgg_cd, address.sido_cd, address.cd].map(value => String(value ?? "").trim()).filter(value => /^(?:\d{2}|\d{5}|\d{7})$/.test(value));
+  const admCode = administrativeCodes.sort((left, right) => right.length - left.length)[0];
+  if (!admCode) throw new Error("SGIS 역지오코딩에서 유효한 2·5·7자리 행정구역 코드를 찾지 못했습니다.");
   const statsUrl = new URL(`https://sgisapi.mods.go.kr/OpenAPI3/stats/${kind}.json`);
   statsUrl.search = new URLSearchParams({ accessToken, year: "2020", adm_cd: admCode, low_search: "1" }).toString();
-  const statsResponse = await fetch(statsUrl); if (!statsResponse.ok) throw new Error(`SGIS ${kind} ${statsResponse.status} 응답`); const payload = await statsResponse.json();
+  const statsResponse = await fetch(statsUrl); if (!statsResponse.ok) throw new Error(`SGIS ${kind} ${statsResponse.status} 응답`); const payload = await statsResponse.json(); if (payload?.errCd !== undefined && String(payload.errCd) !== "0") throw new Error(`SGIS ${kind} 오류 ${payload.errCd}: ${payload.errMsg || "원인 미상"}`);
   return { payload, address: { ...address, adm_cd: admCode }, year: "2020" };
 }
 
@@ -61,8 +63,11 @@ export async function collectSource(source: SourceDefinition, site: SiteRecord, 
   if (source.id === "sgisPopulation" || source.id === "sgisBusiness") {
     const kind = source.id === "sgisPopulation" ? "population" : "company";
     const result = await fetchSgisStats(kind, site, settings);
-    const resultKeys = result.payload && typeof result.payload === "object" ? Object.keys(result.payload).join(", ") : "응답 구조 미확인";
-    return note(source.source, source.title, `대지 중심점의 SGIS 역지오코딩 행정구역 ${result.address.adm_cd} 기준 ${result.year}년 ${kind === "population" ? "인구·가구·주택" : "사업체"} 통계를 조회했습니다. 행정구역·집계구 통계이며 필지 직접값이 아닙니다. 응답 최상위 필드: ${resultKeys}. ${source.limitation}`, "https://sgis.mods.go.kr/developer/html/newOpenApi/api/dataApi/census.html", { latitude: site.latitude, longitude: site.longitude }, { catalogId: source.catalogId, detail: `SGIS 역지오코딩 결과의 행정구역 코드와 통계 원본 응답입니다.\n${JSON.stringify({ address: result.address, year: result.year, statistics: result.payload }, null, 2)}`, ...serializeDetail({ address: result.address, year: result.year, statistics: result.payload }) });
+    const payloadRecord = result.payload && typeof result.payload === "object" ? result.payload as Record<string, unknown> : {};
+    const dataRoot = payloadRecord.result ?? result.payload;
+    const resultKeys = Array.isArray(dataRoot) ? Object.keys(dataRoot[0] && typeof dataRoot[0] === "object" ? dataRoot[0] as Record<string, unknown> : {}).join(", ") : dataRoot && typeof dataRoot === "object" ? Object.keys(dataRoot as Record<string, unknown>).join(", ") : "응답 구조 미확인";
+    const resultCount = Array.isArray(dataRoot) ? dataRoot.length : "집계 결과";
+    return note(source.source, source.title, `대지 중심점의 SGIS 역지오코딩 행정구역 ${result.address.adm_cd} 기준 ${result.year}년 ${kind === "population" ? "인구·가구·주택" : "사업체"} 통계를 조회했습니다. 행정구역·집계구 통계이며 필지 직접값이 아닙니다. 통계 결과 ${resultCount}건 · 주요 필드: ${resultKeys || "응답 구조 미확인"}. ${source.limitation}`,  "https://sgis.mods.go.kr/developer/html/newOpenApi/api/dataApi/census.html", { latitude: site.latitude, longitude: site.longitude }, { catalogId: source.catalogId, detail: `SGIS 역지오코딩 결과의 행정구역 코드와 통계 원본 응답입니다.\n${JSON.stringify({ address: result.address, year: result.year, statistics: result.payload }, null, 2)}`, ...serializeDetail({ address: result.address, year: result.year, statistics: result.payload }) });
   }
   if (source.id === "landRegulation") {
     const pnus = Array.from(new Set([site.pnu, ...(site.parcels ?? []).map(parcel => parcel.pnu)].filter((value): value is string => Boolean(value))));
@@ -92,8 +97,9 @@ export async function collectSource(source: SourceDefinition, site: SiteRecord, 
   }
   if (source.id === "vworldParcel") {
     const candidates = await fetchVworldBrowserParcel({ key: settings.vworldKey, domain: settings.vworldDomain, latitude: site.latitude, longitude: site.longitude, radiusMeters, boundary: site.boundary });
-    const first = candidates[0]; if (!first) throw new Error("현재 중심점의 VWorld 필지 후보를 찾지 못했습니다.");
-    return note(source.source, source.title, `PNU ${first.pnu ?? "미확인"}, 지번 ${first.parcelNumber ?? "미확인"}, 지목 ${first.landCategory ?? "미확인"}, 면적 ${first.areaSqm ? `${first.areaSqm}㎡` : "미확인"}. ${source.limitation}`, "https://www.vworld.kr/", { latitude: site.latitude, longitude: site.longitude }, { catalogId: source.catalogId, detail: `필지 후보 전체와 geometry입니다.\n${JSON.stringify(candidates, null, 2)}`, ...serializeDetail(candidates) });
+    const enriched = await enrichVworldParcelCandidates(candidates, { key: settings.vworldKey, domain: settings.vworldDomain });
+    const first = enriched[0]; if (!first) throw new Error("현재 중심점의 VWorld 필지 후보를 찾지 못했습니다.");
+    return note(source.source, source.title, `PNU ${first.pnu ?? "미확인"}, 지번 ${first.parcelNumber ?? "미확인"}, 지목 ${first.landCategory ?? "속성 조회 필요"}, 면적 ${first.areaSqm ? `${first.areaSqm}㎡` : "geometry 면적 미확인"}, 소재지 ${first.parcelAddress ?? "미확인"}${first.publicPriceWonPerSqm ? `, 개별공시지가 ${first.publicPriceWonPerSqm}원/㎡` : ""}. ${source.limitation}`, "https://www.data.go.kr/data/15123884/openapi.do", { latitude: site.latitude, longitude: site.longitude }, { catalogId: source.catalogId, detail: `연속지적도 후보와 PNU 기반 토지임야정보 속성입니다.\n${JSON.stringify(enriched, null, 2)}`, ...serializeDetail(enriched) });
   }
   if (source.id === "vworldBuildings" || source.id === "vworldRoads") {
     const typename = source.id === "vworldBuildings" ? "lt_c_spbd" : "lt_l_moctlink";

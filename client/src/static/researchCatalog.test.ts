@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createLocalProject } from "./model";
-import { defaultResearchPlan, goalAlignment, researchCatalog, researchThemes } from "./researchCatalog";
+import { defaultResearchPlan, goalAlignment, researchCatalog, researchThemes, toggleResearchTheme } from "./researchCatalog";
 
 describe("research catalog", () => {
   it("keeps planned data separate from currently implemented data", () => {
@@ -15,6 +15,16 @@ describe("research catalog", () => {
     expect(plan.selectedCatalogIds).toContain("population-households");
     expect(plan.selectedCatalogIds).toContain("land-use-zoning");
     expect(plan.selectedCatalogIds).toContain("field-observation");
+  });
+
+  it("keeps child selections synchronized with theme toggles", () => {
+    const plan = defaultResearchPlan();
+    const withoutMacro = toggleResearchTheme(plan, "macro-region");
+    expect(withoutMacro.selectedThemeIds).not.toContain("macro-region");
+    expect(withoutMacro.selectedCatalogIds).not.toContain("population-households");
+    expect(withoutMacro.selectedCatalogIds).toContain("transit");
+    const withMacro = toggleResearchTheme(withoutMacro, "macro-region");
+    expect(withMacro.selectedCatalogIds).toContain("population-households");
   });
 
   it("checks the original investigation sequence from project evidence", () => {

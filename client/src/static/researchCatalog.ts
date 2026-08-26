@@ -1,4 +1,4 @@
-import type { LocalProject } from "./model";
+import type { LocalProject, ResearchPlan } from "./model";
 
 export type ResearchCatalogStatus = "implemented" | "partial" | "planned" | "field";
 export type ResearchCatalogPriority = "P0" | "P1" | "P2";
@@ -27,8 +27,18 @@ export const researchThemes: ResearchTheme[] = [
   { id: "micro-field", scale: "micro", title: "미시 · 현장·감각·접촉면", description: "출입구·경계·소리·빛·냄새·체류·회피처럼 데이터가 놓치기 쉬운 실제 경험을 기록합니다.", catalogIds: ["field-observation", "noise", "culture-heritage", "buildings", "site-boundary"] },
 ];
 
-export function defaultResearchPlan() {
+export function defaultResearchPlan(): ResearchPlan {
   return { selectedThemeIds: researchThemes.map(theme => theme.id), selectedCatalogIds: Array.from(new Set(researchThemes.flatMap(theme => theme.catalogIds))).filter(id => researchCatalog.some(item => item.id === id && item.priority !== "P2")) };
+}
+
+export function toggleResearchTheme(plan: ResearchPlan, themeId: string): ResearchPlan {
+  const theme = researchThemes.find(item => item.id === themeId);
+  if (!theme) return plan;
+  const enabled = plan.selectedThemeIds.includes(themeId);
+  const selectedThemeIds = enabled ? plan.selectedThemeIds.filter(id => id !== themeId) : [...plan.selectedThemeIds, themeId];
+  const remainingCatalogIds = researchThemes.filter(item => selectedThemeIds.includes(item.id)).flatMap(item => item.catalogIds);
+  const selectedCatalogIds = enabled ? plan.selectedCatalogIds.filter(id => !theme.catalogIds.includes(id) || remainingCatalogIds.includes(id)) : Array.from(new Set([...plan.selectedCatalogIds, ...theme.catalogIds]));
+  return { ...plan, selectedThemeIds, selectedCatalogIds };
 }
 
 export function catalogScale(itemId: string): ResearchScale {
@@ -44,14 +54,14 @@ export function catalogScale(itemId: string): ResearchScale {
  * 않으며, 출처와 한계를 함께 노출해 AI 입력에도 과장이 생기지 않도록 한다.
  */
 export const researchCatalog: ResearchCatalogItem[] = [
-  { id: "site-boundary", category: "필지·법규·경계", title: "대지 경계·필지 후보", source: "VWorld 연속지적도 · 사용자 지도 경계", role: "조사 대상의 공식 필지 후보와 사용자가 그린 설계 경계를 구분", unit: "필지·폴리곤", status: "implemented", priority: "P0", lenses: ["필지·법규·경계"], limitation: "지적 경계·면적은 측량·소유권·인허가의 최종 판단이 아니며, 현재는 중심점 기반 후보 조회입니다.", officialUrl: "https://www.vworld.kr/" },
+  { id: "site-boundary", category: "필지·법규·경계", title: "대지 경계·필지 후보", source: "VWorld 연속지적도 · 사용자 지도 경계", role: "조사 대상의 공식 필지 후보와 사용자가 그린 설계 경계를 구분", unit: "필지·폴리곤", status: "implemented", priority: "P0", lenses: ["필지·법규·경계"], limitation: "연속지적도 geometry 면적은 계산값이며 공부면적·측량·소유권·인허가의 최종 판단이 아닙니다. PNU 기반 토지임야정보 속성 보강이 실패하면 원자료와 실패 사유를 표시합니다.", officialUrl: "https://www.vworld.kr/" },
   { id: "elevation", category: "생태·기후·물", title: "고도·지형 표본", source: "Open-Meteo Elevation API · Copernicus DEM", role: "대지의 큰 레벨 차이와 경사 방향을 초기 단계에서 파악", unit: "격자 고도(m)", status: "implemented", priority: "P0", lenses: ["지형·레벨", "생태·기후·물"], limitation: "격자 DEM은 옹벽·계단·정확한 설계 레벨을 대체하지 않습니다.", officialUrl: "https://open-meteo.com/en/docs/elevation-api" },
   { id: "air-quality", category: "생태·기후·물", title: "대기질·기상 표본", source: "Open-Meteo Air Quality API", role: "대지 주변의 환경 조건을 격자 예보 표본으로 확인", unit: "격자 시점값", status: "implemented", priority: "P1", lenses: ["지역 생활", "생태·기후·물"], limitation: "대지 직접 측정값이 아니며 현장 체감·공식 측정소 관측값과 다를 수 있습니다.", officialUrl: "https://open-meteo.com/en/docs/air-quality-api" },
   { id: "urban-parks", category: "생태·기후·물", title: "공원·녹지", source: "공공데이터포털 전국도시공원", role: "주변 오픈스페이스와 녹지 접근 맥락을 파악", unit: "공원 POI", status: "partial", priority: "P1", lenses: ["녹지·생태", "보행·접근"], limitation: "현재 연결은 샘플 목록 중심이며 좌표·거리 필터와 주변성 검증이 더 필요합니다.", officialUrl: "https://www.data.go.kr/" },
   { id: "buildings", category: "형태·단면·밀도", title: "건축물 footprint·용도·층수", source: "VWorld 건축물정보 · 국토부 용도별건물정보 · 건축HUB", role: "주변 건물의 용도·높이·밀도·혼합성을 대지와 공간적으로 비교", unit: "건축물 폴리곤·건물대장", status: "partial", priority: "P0", lenses: ["형태·단면·밀도", "필지·법규·경계"], limitation: "현재 footprint WFS와 국토부 용도별건물정보 WFS를 함께 조회하고 관리번호·PNU·GID 후보로 결합을 시도합니다. 실제 응답의 식별자 일치율·대표/주요/세부용도·층수 필드 coverage 검증이 남아 있으며, footprint만으로 용도를 단정하지 않습니다.", officialUrl: "https://www.data.go.kr/data/15123458/openapi.do" },
   { id: "roads", category: "이동·접근·시간", title: "도로 등급·유형·차로·폭", source: "VWorld 교통링크 · ITS 표준노드링크", role: "접근 방향과 도로 위계를 구분하고 보행·차량 진입 가설의 근거 제공", unit: "도로 링크", status: "partial", priority: "P0", lenses: ["이동·접근·시간", "형태·단면·밀도"], limitation: "현재 WFS 공간객체 수·속성 표본 수집까지 구현했습니다. 실제 폭 속성이 없으면 차로수 기반 추정폭으로만 표시하며, 폭으로 교통량을 추정하지 않습니다.", officialUrl: "https://www.its.go.kr/nodelink/" },
   { id: "land-use-zoning", category: "필지·법규·경계", title: "용도지역·지구·구역", source: "VWorld 용도지역지구도", role: "토지 이용과 건축물 용도·건폐율·용적률·높이 제한의 공간적 맥락 확인", unit: "폴리곤·법정 분류", status: "partial", priority: "P0", lenses: ["필지·법규·경계"], limitation: "현재 VWorld LT_C_LHBLPN 토지이용계획도 공간 표본을 조회합니다. 법규 전체를 대체하지 않으며 토지이음·최신 고시·관할 원문과 함께 확인해야 합니다.", officialUrl: "https://www.data.go.kr/data/15058773/openapi.do" },
-  { id: "land-regulation", category: "필지·법규·경계", title: "토지이용규제·행위제한", source: "국토부 토지이용규제정보서비스 · 토지이음", role: "확정 PNU와 지역·지구에 연결된 행위 제한과 확인 필요 법령을 안내", unit: "PNU·지역지구", status: "planned", priority: "P0", lenses: ["필지·법규·경계"], limitation: "법률·인허가 결론을 자동 확정하지 않으며 최신 원문과 관할기관 확인이 필요합니다.", officialUrl: "https://www.data.go.kr/data/15058410/openapi.do" },
+  { id: "land-regulation", category: "필지·법규·경계", title: "토지이용규제·행위제한", source: "국토부 토지이용규제정보서비스 · 토지이음", role: "확정 PNU와 지역·지구에 연결된 행위 제한과 확인 필요 법령을 안내", unit: "PNU·지역지구", status: "partial", priority: "P0", lenses: ["필지·법규·경계"], limitation: "법률·인허가 결론을 자동 확정하지 않으며 최신 원문과 관할기관 확인이 필요합니다.", officialUrl: "https://www.data.go.kr/data/15058410/openapi.do" },
   { id: "population-households", category: "사람·주거·생활", title: "인구·가구·주택·연령", source: "SGIS 센서스 통계 API", role: "대지 주변 생활권의 인구구성·가구·주거 유형을 파악", unit: "행정구역·집계구", status: "partial", priority: "P1", lenses: ["사람·주거·생활"], limitation: "필지 직접값이 아니라 통계 공간단위 값이며 기준연도와 집계구 경계를 함께 표시해야 합니다.", officialUrl: "https://sgis.mods.go.kr/developer/html/openApi/api/data.html" },
   { id: "businesses", category: "상업·생산·지역경제", title: "사업체·생활업종·상권", source: "SGIS 생활업종 · VWorld 주요상권 · 공공데이터포털 상가업소", role: "주변 활동·업종·공간 프로그램의 분포와 변화 가능성을 파악", unit: "사업체·업종 POI", status: "partial", priority: "P1", lenses: ["상업·생산·지역경제", "지역 생활"], limitation: "등록 사업체와 실제 영업·시간대 활동은 다를 수 있어 현장 관찰과 교차 확인해야 합니다.", officialUrl: "https://sgis.mods.go.kr/developer/html/openApi/api/data.html" },
   { id: "transit", category: "이동·접근·시간", title: "버스·철도·정류장·환승", source: "VWorld 교통노드 · 지자체 BIS · 공공데이터포털 교통정보", role: "대중교통 접근성과 시간대별 이동 조건을 파악", unit: "정류장·노선·링크", status: "partial", priority: "P1", lenses: ["이동·접근·시간"], limitation: "노선·도착정보의 갱신시각과 지역별 제공범위를 표시해야 하며, 도보시간은 네트워크 분석 없이는 추정하지 않습니다.", officialUrl: "https://www.data.go.kr/" },
