@@ -186,6 +186,26 @@ export function normalizeVworldBrowserCandidates(payload: unknown): VworldParcel
   });
 }
 
+export async function fetchVworldDataFeatures(input: { key: string; data: string; latitude: number; longitude: number; radiusMeters?: number; boundary?: BoundaryPoint[]; domain?: string; size?: number }) {
+  const key = normalizeVworldKey(input.key);
+  if (!key) throw new Error("VWorld 인증키를 먼저 입력하세요.");
+  const boundary = input.boundary && input.boundary.length >= 3 ? input.boundary : undefined;
+  const bbox = boundary ? { west: Math.min(...boundary.map(point => point.lng)), south: Math.min(...boundary.map(point => point.lat)), east: Math.max(...boundary.map(point => point.lng)), north: Math.max(...boundary.map(point => point.lat)) } : input.radiusMeters ? contextBbox(input.latitude, input.longitude, input.radiusMeters) : undefined;
+  const geomFilter = bbox ? `BOX(${bbox.west},${bbox.south},${bbox.east},${bbox.north})` : `POINT(${input.longitude} ${input.latitude})`;
+  const url = new URL("https://api.vworld.kr/req/data");
+  url.search = new URLSearchParams({ service: "data", version: "2.0", request: "GetFeature", data: input.data, format: "json", errorformat: "json", crs: "EPSG:4326", geometry: "true", attribute: "true", key, domain: requestDomain(input.domain), geomFilter, size: String(Math.min(200, Math.max(1, input.size ?? 200))) }).toString();
+  try {
+    const body = await jsonp(url.toString());
+    const apiError = apiErrorMessage(body);
+    if (apiError) throw new Error(apiError);
+    return { features: normalizeVworldWfsFeatures(body), bbox, data: input.data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "알 수 없는 오류";
+    if (/Failed to fetch|NetworkError/i.test(message)) throw new Error("브라우저에서 VWorld 공간정보 응답을 읽지 못했습니다. GitHub Pages 도메인과 VWorld 인증키 허용 설정을 확인하세요.");
+    throw new Error(message);
+  }
+}
+
 export async function fetchVworldBrowserParcel(input: { key: string; latitude: number; longitude: number; radiusMeters?: number; boundary?: BoundaryPoint[]; domain?: string }) {
   const key = normalizeVworldKey(input.key);
   if (!key) throw new Error("VWorld 인증키를 먼저 입력하세요.");
