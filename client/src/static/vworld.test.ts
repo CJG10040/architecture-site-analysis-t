@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { candidateBoundary, fetchVworldBrowserParcel, fetchVworldWfs, normalizeVworldBrowserCandidates, normalizeVworldKey, normalizeVworldWfsFeatures, parcelCandidateKey, parcelIntersectsBoundary } from "./vworld";
+import { candidateBoundary, fetchVworldBrowserParcel, fetchVworldWfs, mergeBuildingUseFeatures, normalizeVworldBrowserCandidates, normalizeVworldKey, normalizeVworldWfsFeatures, parcelCandidateKey, parcelIntersectsBoundary } from "./vworld";
 
 describe("normalizeVworldKey", () => {
   it("removes copied wrapping quotes and whitespace without exposing the key", () => {
@@ -28,6 +28,12 @@ describe("VWorld browser request", () => {
     await expect(fetchVworldBrowserParcel({ key: "test-key", domain: "https://example.com/site/", latitude: 35.1, longitude: 126.9 })).rejects.toThrow("INCORRECT_KEY");
     expect(requestUrl).toContain("domain=https%3A%2F%2Fexample.com%2Fsite%2F");
     vi.unstubAllGlobals();
+  });
+
+  it("merges detailed building-use attributes by a normalized management identifier", () => {
+    const base = [{ id: "building.1", properties: { BLDG_MNG_NO: "A-1", BULD_NM: "건물" } }];
+    const usage = [{ id: "use.1", properties: { bldg_mng_no: "A-1", main_use: "근린생활시설", GRO_FLO_CO: 4 } }];
+    expect(mergeBuildingUseFeatures(base, usage)[0].properties).toMatchObject({ main_use: "근린생활시설", GRO_FLO_CO: 4 });
   });
 
   it("uses the HTML prototype's WFS format_options callback", async () => {

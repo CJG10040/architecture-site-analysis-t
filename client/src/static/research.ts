@@ -1,5 +1,5 @@
 import type { PublicServiceSettings, ResearchNote, SiteRecord } from "./model";
-import { fetchVworldBrowserParcel, fetchVworldWfs } from "./vworld";
+import { fetchVworldBrowserParcel, fetchVworldBuildingUseWfs, fetchVworldWfs, mergeBuildingUseFeatures } from "./vworld";
 
 export type SourceId = "terrain" | "air" | "vworldParcel" | "cityParks" | "vworldBuildings" | "vworldRoads";
 export type SourceDefinition = { id: SourceId; catalogId: string; title: string; source: string; lenses: string[]; needs: "none" | "vworldKey" | "dataGoKrKey"; limitation: string };
@@ -39,9 +39,16 @@ export async function collectSource(source: SourceDefinition, site: SiteRecord, 
   if (source.id === "vworldBuildings" || source.id === "vworldRoads") {
     const typename = source.id === "vworldBuildings" ? "lt_c_spbd" : "lt_l_moctlink";
     const result = await fetchVworldWfs({ key: settings.vworldKey, domain: settings.vworldDomain, typename, latitude: site.latitude, longitude: site.longitude, radiusMeters: siteRadius(radiusMeters) });
-    const propertyNames = Array.from(new Set(result.features.flatMap(feature => Object.keys(feature.properties)))).slice(0, 8).join(", ");
-    const spatialFeatures = result.features.filter(feature => feature.geometry).slice(0, 300).map((feature, index) => ({ id: feature.id ?? `${source.id}-${index + 1}`, geometry: feature.geometry!, properties: feature.properties }));
-    const record = note(source.source, source.title, `조사 반경 ${siteRadius(radiusMeters)}m 내 WFS 객체 ${result.features.length.toLocaleString("ko-KR")}개. 지도에는 공간자료 ${spatialFeatures.length.toLocaleString("ko-KR")}개를 표시합니다. 속성 표본: ${propertyNames || "응답 속성 없음"}. ${source.limitation}`, source.id === "vworldBuildings" ? "https://www.data.go.kr/data/15123458/openapi.do" : "https://www.its.go.kr/nodelink/", { latitude: site.latitude, longitude: site.longitude }, { catalogId: source.catalogId, detail: `WFS 원본 feature의 속성·geometry 상세입니다.\n${JSON.stringify(result.features, null, 2)}`, ...serializeDetail(result.features) });
+    let features = result.features;
+    let useFeatures = [] as typeof result.features;
+    let useStatus = "";
+    if (source.id === "vworldBuildings") {
+      try { const useResult = await fetchVworldBuildingUseWfs({ key: settings.vworldKey, domain: settings.vworldDomain, latitude: site.latitude, longitude: site.longitude, radiusMeters: siteRadius(radiusMeters) }); useFeatures = useResult.features; features = mergeBuildingUseFeatures(result.features, useFeatures); useStatus = `용도별건물정보 ${useFeatures.length.toLocaleString("ko-KR")}개를 식별자 후보로 결합 시도`; }
+      catch (error) { useStatus = `용도별건물정보 보강 실패 · footprint 자료만 사용 · ${error instanceof Error ? error.message : "원인 미상"}`; }
+    }
+    const propertyNames = Array.from(new Set(features.flatMap(feature => Object.keys(feature.properties)))).slice(0, 16).join(", ");
+    const spatialFeatures = features.filter(feature => feature.geometry).slice(0, 300).map((feature, index) => ({ id: feature.id ?? `${source.id}-${index + 1}`, geometry: feature.geometry!, properties: feature.properties }));
+    const record = note(source.source, source.title, `조사 반경 ${siteRadius(radiusMeters)}m 내 WFS 객체 ${features.length.toLocaleString("ko-KR")}개. 지도에는 공간자료 ${spatialFeatures.length.toLocaleString("ko-KR")}개를 표시합니다. 속성 표본: ${propertyNames || "응답 속성 없음"}. ${useStatus ? `${useStatus}. ` : ""}${source.limitation}`, source.id === "vworldBuildings" ? "https://www.data.go.kr/data/15123458/openapi.do" : "https://www.its.go.kr/nodelink/", { latitude: site.latitude, longitude: site.longitude }, { catalogId: source.catalogId, detail: `footprint WFS 원본 feature의 속성·geometry 상세입니다.\n${JSON.stringify(features, null, 2)}${useFeatures.length ? `\n\n용도별건물정보 WFS 원본 feature입니다.\n${JSON.stringify(useFeatures, null, 2)}` : ""}`, ...serializeDetail({ footprint: features, buildingUse: useFeatures, useStatus }) });
     record.spatialLayer = { id: source.id, title: source.title, source: source.source, fetchedAt: record.createdAt, features: spatialFeatures, totalFeatureCount: result.features.length, truncated: result.features.length > spatialFeatures.length };
     return record;
   }

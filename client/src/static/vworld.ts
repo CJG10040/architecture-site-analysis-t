@@ -207,6 +207,33 @@ export async function fetchVworldBrowserParcel(input: { key: string; latitude: n
   }
 }
 
+export async function fetchVworldBuildingUseWfs(input: { key: string; latitude: number; longitude: number; radiusMeters: number; maxFeatures?: number; domain?: string }) {
+  const key = normalizeVworldKey(input.key);
+  if (!key) throw new Error("VWorld 인증키를 먼저 입력하세요.");
+  const bbox = contextBbox(input.latitude, input.longitude, input.radiusMeters);
+  const url = new URL("https://api.vworld.kr/ned/wfs/getBuildingUseWFS");
+  url.search = new URLSearchParams({ typename: "dt_d198", bbox: `${bbox.south},${bbox.west},${bbox.north},${bbox.east},EPSG:4326`, maxFeatures: String(Math.min(1000, Math.max(1, input.maxFeatures ?? 1000))), srsName: "EPSG:4326", output: "application/json", key, domain: requestDomain(input.domain) }).toString();
+  try {
+    const payload = await jsonp(url.toString());
+    const apiError = apiErrorMessage(payload);
+    if (apiError) throw new Error(apiError);
+    const features = normalizeVworldWfsFeatures(payload);
+    if (!features.length && typeof payload === "object" && payload !== null && JSON.stringify(payload).match(/exception|error|fail/i)) throw new Error("용도별건물정보 WFS가 오류 응답을 반환했습니다.");
+    return { features, bbox, typename: "dt_d198" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "알 수 없는 오류";
+    if (/Failed to fetch|NetworkError/i.test(message)) throw new Error("브라우저에서 용도별건물정보 WFS 응답을 읽지 못했습니다. VWorld 인증키와 허용 설정을 확인하세요.");
+    throw new Error(message);
+  }
+}
+
+export function mergeBuildingUseFeatures(base: VworldWfsFeature[], useFeatures: VworldWfsFeature[]) {
+  const value = (feature: VworldWfsFeature, keys: string[]) => keys.map(key => Object.entries(feature.properties).find(([name]) => name.toLowerCase() === key.toLowerCase())?.[1]).find(item => item !== undefined && item !== null && String(item).trim() !== "");
+  const useByKey = new Map<string, VworldWfsFeature>();
+  useFeatures.forEach(feature => { const key = value(feature, ["bldrgst_pk", "bld_mng_no", "bldg_mng_no", "building_management_no", "건축물대장관리번호", "pnu", "gid"]) ?? feature.id; if (key) useByKey.set(String(key), feature); });
+  return base.map(feature => { const key = value(feature, ["bldrgst_pk", "bld_mng_no", "bldg_mng_no", "building_management_no", "건축물대장관리번호", "pnu", "gid"]) ?? feature.id; const matched = key ? useByKey.get(String(key)) : undefined; return matched ? { ...feature, properties: { ...feature.properties, ...matched.properties } } : feature; });
+}
+
 export async function fetchVworldWfs(input: { key: string; typename: string; latitude: number; longitude: number; radiusMeters: number; maxFeatures?: number; domain?: string }) {
   const key = normalizeVworldKey(input.key);
   if (!key) throw new Error("VWorld 인증키를 먼저 입력하세요.");
