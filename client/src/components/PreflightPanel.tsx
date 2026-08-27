@@ -20,7 +20,7 @@ export function PreflightPanel({ project, settings, onCollected }: { project: Lo
   const plan = project.researchPlan ?? defaultResearchPlan();
   const suggested = suggestedSources(project.lenses, plan.selectedCatalogIds);
   const autoCatalogIds = new Set(suggested.map(source => source.catalogId));
-  const manualSources = researchCatalog.filter(item => plan.selectedCatalogIds.includes(item.id) && !autoCatalogIds.has(item.id));
+  const manualSources = researchCatalog.filter(item => plan.selectedCatalogIds.includes(item.id) && (!autoCatalogIds.has(item.id) || ["hydrology", "noise", "imagery-change"].includes(item.id)));
   const [selected, setSelected] = useState<SourceId[]>(suggested.map(source => source.id));
   const [detailDrafts, setDetailDrafts] = useState<Record<string, string>>({});
   const [fileTarget, setFileTarget] = useState("");

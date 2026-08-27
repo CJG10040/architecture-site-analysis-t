@@ -1,7 +1,8 @@
 import type { PublicServiceSettings, ResearchNote, SiteRecord } from "./model";
 import { enrichVworldParcelCandidates, fetchVworldBrowserParcel, fetchVworldBuildingUseWfs, fetchVworldDataFeatures, fetchVworldWfs, mergeBuildingUseFeatures } from "./vworld";
+import { fetchOsmHydrology, osmHydrologyQuery } from "./osm";
 
-export type SourceId = "terrain" | "air" | "vworldParcel" | "cityParks" | "vworldBuildings" | "vworldRoads" | "vworldZoning" | "landRegulation" | "vworldWelfare" | "vworldTransit" | "vworldBusiness" | "vworldCulture" | "sgisPopulation" | "sgisBusiness";
+export type SourceId = "terrain" | "air" | "vworldParcel" | "cityParks" | "vworldBuildings" | "vworldRoads" | "vworldZoning" | "landRegulation" | "vworldWelfare" | "vworldTransit" | "vworldBusiness" | "vworldCulture" | "sgisPopulation" | "sgisBusiness" | "osmHydrology";
 export type SourceDefinition = { id: SourceId; catalogId: string; title: string; source: string; lenses: string[]; needs: "none" | "vworldKey" | "dataGoKrKey" | "sgisKey"; limitation: string };
 export const sourceCatalog: SourceDefinition[] = [
   { id: "terrain", catalogId: "elevation", title: "고도·지형 표본", source: "Open-Meteo Elevation API", lenses: ["지형·레벨"], needs: "none", limitation: "격자 고도는 옹벽·계단·정확한 설계 레벨을 대체하지 않습니다." },
@@ -15,6 +16,7 @@ export const sourceCatalog: SourceDefinition[] = [
   { id: "vworldBusiness", catalogId: "businesses", title: "주요상권 공간 표본", source: "VWorld WFS · lt_c_dgmainbiz", lenses: ["상업·생산·지역경제", "지역 생활"], needs: "vworldKey", limitation: "주요상권 레이어는 전체 사업체·실제 영업·시간대 활동을 대체하지 않습니다." },
   { id: "vworldCulture", catalogId: "culture-heritage", title: "문화시설·도서관 공간 표본", source: "VWorld WFS · 박물관미술관·작은도서관", lenses: ["문화·기억·유휴"], needs: "vworldKey", limitation: "등록된 문화시설·도서관 표본이며 비공식 지역 기억과 실제 사용 흔적은 현장조사가 필요합니다." },
   { id: "vworldParcel", catalogId: "site-boundary", title: "연속지적도 필지 후보", source: "VWorld", lenses: ["지형·레벨", "프로그램·상권"], needs: "vworldKey", limitation: "브라우저 키 도메인 등록과 필지 후보의 사용자 확인이 필요합니다." },
+  { id: "osmHydrology", catalogId: "hydrology", title: "하천·수계 공간 표본", source: "OpenStreetMap Overpass API · VWorld 수자원 보완", lenses: ["녹지·생태", "지형·레벨"], needs: "none", limitation: "OSM에 매핑된 수로·수면 표본입니다. 침수위험·배수능력·법정 하천경계는 판단하지 않으며 원자료와 OSM 기여자 출처를 함께 보존합니다." },
   { id: "vworldBuildings", catalogId: "buildings", title: "건축물 footprint 공간 표본", source: "VWorld WFS · lt_c_spbd", lenses: ["지형·레벨", "일조·차폐"], needs: "vworldKey", limitation: "현재는 조사 반경 내 공간객체 수와 속성 표본을 근거로 저장하며, 용도·층수의 완전한 결합은 추가 구현이 필요합니다." },
   { id: "vworldRoads", catalogId: "roads", title: "도로·교통링크 공간 표본", source: "VWorld WFS · lt_l_moctlink", lenses: ["보행·접근", "프로그램·상권"], needs: "vworldKey", limitation: "교통링크가 응답하지 않으면 도로중심선 fallback과 원본 응답 확인이 필요하며, 교통량은 별도 연결 전까지 미확인입니다." },
   { id: "cityParks", catalogId: "urban-parks", title: "도시공원·녹지 목록", source: "공공데이터포털 전국도시공원", lenses: ["녹지·생태", "보행·접근"], needs: "dataGoKrKey", limitation: "브라우저 CORS·서비스 활용 승인에 따라 원본 파일 불러오기로 대체될 수 있습니다." },
@@ -59,6 +61,11 @@ export async function collectSource(source: SourceDefinition, site: SiteRecord, 
     const url = new URL("https://air-quality-api.open-meteo.com/v1/air-quality"); url.search = new URLSearchParams({ latitude: String(site.latitude), longitude: String(site.longitude), current: "pm10,pm2_5,carbon_monoxide,nitrogen_dioxide", timezone: "Asia/Seoul" }).toString();
     const response = await fetch(url); if (!response.ok) throw new Error(`Open-Meteo 대기질 ${response.status} 응답`); const payload = await response.json(); const current = payload.current ?? {};
     return note(source.source, source.title, `대지 중심 격자 표본: PM10 ${current.pm10 ?? "미확인"} μg/m³, PM2.5 ${current.pm2_5 ?? "미확인"} μg/m³, NO₂ ${current.nitrogen_dioxide ?? "미확인"} μg/m³. ${source.limitation}`, "https://open-meteo.com/en/docs/air-quality-api", site, { catalogId: source.catalogId, detail: `Open-Meteo 원본 응답입니다.\n${JSON.stringify(payload, null, 2)}`, ...serializeDetail(payload) });
+  }
+  if (source.id === "osmHydrology") {
+    const result = await fetchOsmHydrology(site.latitude, site.longitude, radiusMeters);
+    const names = result.features.map(feature => feature.properties.name || feature.properties.waterway || feature.properties.natural).filter(Boolean).slice(0, 8).join(", ");
+    return note(source.source, source.title, `대지 중심점 ${siteRadius(radiusMeters)}m BBOX에서 OSM 수로·수면 공간객체 ${result.features.length.toLocaleString("ko-KR")}개를 추출했습니다.${names ? ` 표본 명칭: ${names}.` : ""} 침수·배수·법정 하천경계는 별도 확인이 필요합니다.`, "https://www.openstreetmap.org/", { latitude: site.latitude, longitude: site.longitude }, { catalogId: source.catalogId, detail: `OpenStreetMap Overpass 원본 응답과 요청 범위입니다.\nendpoint: ${result.endpoint}\nquery:\n${JSON.stringify(result.raw, null, 2)}`, ...serializeDetail({ endpoint: result.endpoint, query: osmHydrologyQuery(site.latitude, site.longitude, radiusMeters), response: result.raw }), spatialLayer: { id: source.id, title: source.title, source: source.source, fetchedAt: new Date().toISOString(), features: result.features.slice(0, 300), totalFeatureCount: result.features.length, truncated: result.features.length > 300 } });
   }
   if (source.id === "sgisPopulation" || source.id === "sgisBusiness") {
     const kind = source.id === "sgisPopulation" ? "population" : "company";
