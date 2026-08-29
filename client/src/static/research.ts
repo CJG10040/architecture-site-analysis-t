@@ -1,5 +1,6 @@
 import type { PublicServiceSettings, ResearchNote, SiteRecord } from "./model";
 import { enrichVworldParcelCandidates, fetchVworldBrowserParcel, fetchVworldBuildingUseWfs, fetchVworldDataFeatures, fetchVworldWfs, mergeBuildingUseFeatures } from "./vworld";
+import { auditBuildingFootprints } from "./buildingFootprintQuality";
 import { fetchOsmHydrology, osmHydrologyQuery } from "./osm";
 
 export type SourceId = "terrain" | "air" | "vworldParcel" | "cityParks" | "vworldBuildings" | "vworldRoads" | "vworldZoning" | "landRegulation" | "vworldWelfare" | "vworldTransit" | "vworldBusiness" | "vworldCulture" | "sgisPopulation" | "sgisBusiness" | "osmHydrology";
@@ -111,6 +112,7 @@ export async function collectSource(source: SourceDefinition, site: SiteRecord, 
   if (source.id === "vworldBuildings" || source.id === "vworldRoads") {
     const typename = source.id === "vworldBuildings" ? "lt_c_spbd" : "lt_l_moctlink";
     const result = await fetchVworldWfs({ key: settings.vworldKey, domain: settings.vworldDomain, typename, latitude: site.latitude, longitude: site.longitude, radiusMeters: siteRadius(radiusMeters) });
+    const footprintQuality = source.id === "vworldBuildings" ? auditBuildingFootprints(result.features) : undefined;
     let features = result.features;
     let useFeatures = [] as typeof result.features;
     let useStatus = "";
@@ -120,7 +122,8 @@ export async function collectSource(source: SourceDefinition, site: SiteRecord, 
     }
     const propertyNames = Array.from(new Set(features.flatMap(feature => Object.keys(feature.properties)))).slice(0, 16).join(", ");
     const spatialFeatures = features.filter(feature => feature.geometry).slice(0, 300).map((feature, index) => ({ id: feature.id ?? `${source.id}-${index + 1}`, geometry: feature.geometry!, properties: feature.properties }));
-    const record = note(source.source, source.title, `조사 반경 ${siteRadius(radiusMeters)}m 내 WFS 객체 ${features.length.toLocaleString("ko-KR")}개. 지도에는 공간자료 ${spatialFeatures.length.toLocaleString("ko-KR")}개를 표시합니다. 속성 표본: ${propertyNames || "응답 속성 없음"}. ${useStatus ? `${useStatus}. ` : ""}${source.limitation}`, source.id === "vworldBuildings" ? "https://www.data.go.kr/data/15123458/openapi.do" : "https://www.its.go.kr/nodelink/", { latitude: site.latitude, longitude: site.longitude }, { catalogId: source.catalogId, detail: `footprint WFS 원본 feature의 속성·geometry 상세입니다.\n${JSON.stringify(features, null, 2)}${useFeatures.length ? `\n\n용도별건물정보 WFS 원본 feature입니다.\n${JSON.stringify(useFeatures, null, 2)}` : ""}`, ...serializeDetail({ footprint: features, buildingUse: useFeatures, useStatus }) });
+    const qualitySummary = footprintQuality ? ` 유효 footprint ${footprintQuality.usablePolygonFeatures.toLocaleString("ko-KR")}개, geometry 오류 ${footprintQuality.invalidGeometryCount.toLocaleString("ko-KR")}개, 식별자 누락 ${footprintQuality.missingIdentityCount.toLocaleString("ko-KR")}개, 식별자 중복 그룹 ${footprintQuality.duplicateIdentityGroups.length.toLocaleString("ko-KR")}개입니다.` : "";
+    const record = note(source.source, source.title, `조사 반경 ${siteRadius(radiusMeters)}m 내 WFS 객체 ${features.length.toLocaleString("ko-KR")}개. 지도에는 공간자료 ${spatialFeatures.length.toLocaleString("ko-KR")}개를 표시합니다.${qualitySummary} 속성 표본: ${propertyNames || "응답 속성 없음"}. ${useStatus ? `${useStatus}. ` : ""}${source.limitation}`, source.id === "vworldBuildings" ? "https://www.data.go.kr/data/15123458/openapi.do" : "https://www.its.go.kr/nodelink/", { latitude: site.latitude, longitude: site.longitude }, { catalogId: source.catalogId, detail: `footprint WFS 원본 feature의 속성·geometry 상세입니다.\n${JSON.stringify(features, null, 2)}${useFeatures.length ? `\n\n용도별건물정보 WFS 원본 feature입니다.\n${JSON.stringify(useFeatures, null, 2)}` : ""}`, ...serializeDetail({ footprint: features, footprintQuality, buildingUse: useFeatures, useStatus }) });
     record.spatialLayer = { id: source.id, title: source.title, source: source.source, fetchedAt: record.createdAt, features: spatialFeatures, totalFeatureCount: result.features.length, truncated: result.features.length > spatialFeatures.length };
     return record;
   }
