@@ -183,7 +183,7 @@ function ringAreaSqm(ring: unknown) {
   const projected = points.map(([lng, lat]) => [lng * Math.cos(meanLat * Math.PI / 180) * scale, lat * scale]);
   return Math.abs(projected.reduce((sum, point, index) => { const next = projected[(index + 1) % projected.length]; return sum + point[0] * next[1] - next[0] * point[1]; }, 0)) / 2;
 }
-function geometryAreaSqm(geometry?: SpatialGeometry) {
+export function geometryAreaSqm(geometry?: SpatialGeometry) {
   if (!geometry || !Array.isArray(geometry.coordinates)) return 0;
   const polygons = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.type === "MultiPolygon" ? geometry.coordinates : [];
   return polygons.reduce((total, polygon) => Array.isArray(polygon) ? total + polygon.reduce((sum, ring, index) => sum + (index === 0 ? ringAreaSqm(ring) : -ringAreaSqm(ring)), 0) : total, 0);
