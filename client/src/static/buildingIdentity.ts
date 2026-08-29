@@ -58,7 +58,7 @@ export function buildingIdentityFromProperties(properties: Record<string, unknow
     pnu: ["pnu", "PNU"],
     gid: ["gid", "GID"],
     featureId: ["featureId", "feature_id", "id"],
-    address: ["address", "addr", "jibun_addr", "road_addr", "주소", "소재지"],
+    address: ["address", "addr", "jibun_addr", "road_addr", "plat_plc", "주소", "소재지"],
   };
   const normalizedProperties = Object.entries(properties).map(([key, value]) => [key.toLowerCase().replace(/[\s_-]/g, ""), value] as const);
   const read = (field: keyof typeof aliases) => {

@@ -2,7 +2,7 @@ import type { SpatialGeometry } from "./model";
 import { buildingScopeMembership, defaultBuildingScopeConfig, normalizeBuildingScopeConfig, type BuildingScope, type BuildingScopeConfig } from "./buildingScope";
 
 export type BuildingValueStatus = "verified" | "calculated" | "candidate" | "unknown" | "conflict";
-export type BuildingFieldName = "buildingManagementNo" | "pnu" | "address" | "buildingName" | "primaryUse" | "secondaryUses" | "aboveGroundFloors" | "belowGroundFloors" | "heightMeters" | "buildingAreaSqm" | "grossFloorAreaSqm" | "coverageRatio" | "floorAreaRatio" | "structure" | "approvalDate" | "completionDate" | "demolitionDate";
+export type BuildingFieldName = "buildingManagementNo" | "bldrgstPk" | "ufid" | "pnu" | "gid" | "address" | "buildingName" | "primaryUse" | "secondaryUses" | "aboveGroundFloors" | "belowGroundFloors" | "heightMeters" | "buildingAreaSqm" | "grossFloorAreaSqm" | "coverageRatio" | "floorAreaRatio" | "structure" | "approvalDate" | "completionDate" | "demolitionDate";
 
 export type BuildingValue = {
   value: unknown;

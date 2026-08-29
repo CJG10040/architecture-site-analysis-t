@@ -49,6 +49,12 @@ describe("VWorld browser request", () => {
     expect(mergeBuildingUseFeatures(base, usage)[0].properties).toMatchObject({ main_use: "근린생활시설", GRO_FLO_CO: 4 });
   });
 
+  it("does not choose arbitrarily when multiple use records share one identity", () => {
+    const base = [{ id: "building.1", properties: { BLDG_MNG_NO: "A-1" } }];
+    const usage = [{ id: "use.1", properties: { bldg_mng_no: "A-1", main_use: "주거" } }, { id: "use.2", properties: { bldg_mng_no: "A-1", main_use: "판매시설" } }];
+    expect(mergeBuildingUseFeatures(base, usage)[0].properties).toEqual({ BLDG_MNG_NO: "A-1" });
+  });
+
   it("uses the HTML prototype's WFS format_options callback", async () => {
     const fakeWindow: Record<string, unknown> = { setTimeout, clearTimeout };
     let requestUrl = "";

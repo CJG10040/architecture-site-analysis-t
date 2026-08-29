@@ -1,3 +1,4 @@
+import { buildingIdentityFromProperties, buildingIdentityPriority, normalizeBuildingIdentity } from "./buildingIdentity";
 import type { BoundaryPoint, SpatialGeometry } from "./model";
 
 export type VworldParcelCandidate = { featureId?: string; pnu?: string; parcelNumber?: string; landCategory?: string; areaSqm?: string; areaSqmSource?: "attribute" | "geometry"; parcelAddress?: string; publicPriceWonPerSqm?: string; dataDate?: string; attributeSource?: string; attributeError?: string; geometry?: SpatialGeometry; properties?: Record<string, unknown> };
@@ -315,10 +316,17 @@ export async function fetchVworldBuildingUseWfs(input: { key: string; latitude: 
 }
 
 export function mergeBuildingUseFeatures(base: VworldWfsFeature[], useFeatures: VworldWfsFeature[]) {
-  const value = (feature: VworldWfsFeature, keys: string[]) => keys.map(key => Object.entries(feature.properties).find(([name]) => name.toLowerCase() === key.toLowerCase())?.[1]).find(item => item !== undefined && item !== null && String(item).trim() !== "");
-  const useByKey = new Map<string, VworldWfsFeature>();
-  useFeatures.forEach(feature => { const key = value(feature, ["bldrgst_pk", "bld_mng_no", "bldg_mng_no", "building_management_no", "건축물대장관리번호", "pnu", "gid"]) ?? feature.id; if (key) useByKey.set(String(key), feature); });
-  return base.map(feature => { const key = value(feature, ["bldrgst_pk", "bld_mng_no", "bldg_mng_no", "building_management_no", "건축물대장관리번호", "pnu", "gid"]) ?? feature.id; const matched = key ? useByKey.get(String(key)) : undefined; return matched ? { ...feature, properties: { ...feature.properties, ...matched.properties } } : feature; });
+  const identityKey = (feature: VworldWfsFeature) => {
+    const identity = buildingIdentityFromProperties(feature.properties, feature.id);
+    for (const field of buildingIdentityPriority) {
+      const value = normalizeBuildingIdentity(identity[field]);
+      if (value) return `${field}:${value}`;
+    }
+    return "";
+  };
+  const useByKey = new Map<string, VworldWfsFeature[]>();
+  useFeatures.forEach(feature => { const key = identityKey(feature); if (key) useByKey.set(key, [...(useByKey.get(key) ?? []), feature]); });
+  return base.map(feature => { const key = identityKey(feature); const matches = key ? useByKey.get(key) ?? [] : []; const matched = matches.length === 1 ? matches[0] : undefined; return matched ? { ...feature, properties: { ...feature.properties, ...matched.properties } } : feature; });
 }
 
 export async function fetchVworldWfs(input: { key: string; typename: string; latitude: number; longitude: number; radiusMeters: number; maxFeatures?: number; domain?: string }) {
