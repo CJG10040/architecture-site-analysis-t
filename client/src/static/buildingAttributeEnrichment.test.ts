@@ -30,7 +30,7 @@ describe("building attribute normalization", () => {
     feature.properties.HEIGHT = "확인 필요";
     const normalized = normalizeBuildingAttributes(feature, "source-1");
     expect(normalized.fields.aboveGroundFloors).toBeUndefined();
-    expect(normalized.fields.heightMeters).toBeUndefined();
+    expect(normalized.fields.heightMeters).toMatchObject({ value: null, status: "unknown" });
   });
 });
 

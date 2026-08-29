@@ -1,5 +1,6 @@
 import { buildingIdentityFromProperties, buildBuildingIdentityIndex, matchBuildingIdentity, type BuildingIdentityInput, type BuildingMatchDecision } from "./buildingIdentity";
 import type { BuildingFieldName, BuildingRecord, BuildingValue } from "./buildingDataModel";
+import { normalizeBuildingField } from "./buildingFieldNormalization";
 import type { VworldWfsFeature } from "./vworld";
 
 export type NormalizedBuildingAttributes = {
@@ -51,20 +52,12 @@ const aliases: Record<BuildingFieldName, string[]> = {
   demolitionDate: ["demolitionDate", "demolition_date", "말소일", "철거일"],
 };
 
-const numericFields = new Set<BuildingFieldName>(["aboveGroundFloors", "belowGroundFloors", "heightMeters", "buildingAreaSqm", "grossFloorAreaSqm", "coverageRatio", "floorAreaRatio"]);
-
 function key(value: string) { return value.toLowerCase().replace(/[\s_-]/g, ""); }
 function readProperty(properties: Record<string, unknown>, field: BuildingFieldName) {
   const wanted = aliases[field].map(key);
   const entry = Object.entries(properties).find(([name, value]) => wanted.includes(key(name)) && value !== undefined && value !== null && String(value).trim() !== "");
   return entry ? { name: entry[0], value: entry[1] } : undefined;
 }
-function parseNumber(value: unknown) {
-  if (value === undefined || value === null) return null;
-  const parsed = Number(String(value).replace(/,/g, "").replace(/㎡|m²|%|m/g, "").trim());
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 export function normalizeBuildingAttributes(feature: VworldWfsFeature, sourceRefId: string): NormalizedBuildingAttributes {
   const properties = feature.properties ?? {};
   const identity = buildingIdentityFromProperties(properties, feature.id);
@@ -72,9 +65,7 @@ export function normalizeBuildingAttributes(feature: VworldWfsFeature, sourceRef
   (Object.keys(aliases) as BuildingFieldName[]).forEach(field => {
     const raw = readProperty(properties, field);
     if (!raw) return;
-    const value = numericFields.has(field) ? parseNumber(raw.value) : String(raw.value).trim();
-    if (value === null || value === "") return;
-    fields[field] = { value, status: "verified", sourceRefIds: [sourceRefId], rawFieldNames: [raw.name] };
+    fields[field] = normalizeBuildingField(field, raw.value, sourceRefId, raw.name);
   });
   return { sourceRefId, identity, fields, rawFieldNames: Object.keys(properties) };
 }

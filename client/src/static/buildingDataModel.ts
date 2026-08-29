@@ -1,7 +1,7 @@
 import type { SpatialGeometry } from "./model";
 import { buildingScopeMembership, defaultBuildingScopeConfig, normalizeBuildingScopeConfig, type BuildingScope, type BuildingScopeConfig } from "./buildingScope";
 
-export type BuildingValueStatus = "verified" | "calculated" | "candidate" | "unknown" | "conflict";
+export type BuildingValueStatus = "verified" | "calculated" | "estimated" | "candidate" | "unknown" | "conflict";
 export type BuildingFieldName = "buildingManagementNo" | "bldrgstPk" | "ufid" | "pnu" | "gid" | "address" | "buildingName" | "primaryUse" | "secondaryUses" | "aboveGroundFloors" | "belowGroundFloors" | "heightMeters" | "buildingAreaSqm" | "grossFloorAreaSqm" | "coverageRatio" | "floorAreaRatio" | "structure" | "approvalDate" | "completionDate" | "demolitionDate";
 export type BuildingLifecycleEventType = "permit" | "start" | "completion" | "change" | "demolition" | "constructionYear";
 export type BuildingDatePrecision = "day" | "year";
@@ -11,6 +11,9 @@ export type BuildingValue = {
   value: unknown;
   status: BuildingValueStatus;
   sourceRefIds: string[];
+  rawValue?: unknown;
+  unit?: string;
+  normalizationMethod?: string;
   rawFieldNames?: string[];
   note?: string;
 };
